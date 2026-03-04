@@ -28,6 +28,15 @@ public static class SCAFileRunner
 
         PrintHeader(scaFile.Policy);
 
+        // Extra safety: if the policy clearly targets a different Windows version/edition,
+        // don't run thousands of irrelevant checks.
+        if (!PolicyTargeting.PolicyAppliesToThisHost(scaFile.Policy, yamlPath, out var whyNot))
+        {
+            WriteColor($"  {whyNot}", ConsoleColor.Yellow);
+            WriteColor("  Skipping scan.", ConsoleColor.Yellow);
+            return;
+        }
+
         if (scaFile.Requirements is not null && !EvaluateRequirements(scaFile.Requirements))
         {
             WriteColor("  Requirements not satisfied — this policy does not apply to this system.", ConsoleColor.Yellow);

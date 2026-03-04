@@ -1,16 +1,25 @@
 ﻿using SCA_Scanner;
+using System.IO;
+using System.Security.Principal;
 
+//change to your path
+FileInfo myFilePath = new FileInfo(
+    @"C:\Workspace\csharp_codes\SCA_Scanner\SCA_Scanner\myymlfiles\cis_win10_enterprise.yml"
+);
 
+string? arg = args.FirstOrDefault(a => !a.StartsWith('-'));
 
-var path = "C:\\Users\\Jolle\\Downloads\\cis_win10_enterprise.yml";
+FileInfo file = !string.IsNullOrWhiteSpace(arg)
+    ? new FileInfo(arg)
+    : myFilePath;
 
-
-if (args.Length > 0 && File.Exists(args[0]))
+if (!file.Exists)
 {
-    // Mode 1: run a full SCA YAML file
-    SCAFileRunner.RunFile(args[0]);
+    Console.ForegroundColor = ConsoleColor.Red;
+    Console.WriteLine($"File not found: {file.FullName}");
+    Console.ResetColor();
+    Environment.ExitCode = 2;
+    return;
 }
-else
-{
-    SCAFileRunner.RunFile(path);
-}
+
+SCAFileRunner.RunFile(file.FullName);
