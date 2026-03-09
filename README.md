@@ -7,15 +7,16 @@ Standalone tool to scan a system Compliance status with Security Configuration A
 
 ## TODO:
 - [X] Runs on Windows 
+- [X] Runs on MacOS
 - [ ] Runs on Linux
 - [ ] Log to logfile
 - [ ] Output to file (in multiple formats, CSV, JSON and TEXT)
-- [ ] Variable support
-- [ ] Support check conditions [(All, any, none)](https://documentation.wazuh.com/current/user-manual/capabilities/sec-config-assessment/creating-custom-policies.html#condition)
-- [ ] Rule type ['Directory'](https://documentation.wazuh.com/current/user-manual/capabilities/sec-config-assessment/creating-custom-policies.html#rules)
-- [ ] Rule type ['Process'](https://documentation.wazuh.com/current/user-manual/capabilities/sec-config-assessment/creating-custom-policies.html#rules)
-- [x] Rule type ['Commands'](https://documentation.wazuh.com/current/user-manual/capabilities/sec-config-assessment/creating-custom-policies.html#rules)
-- [x] Rule type ['Registry (Windows Only)'](https://documentation.wazuh.com/current/user-manual/capabilities/sec-config-assessment/creating-custom-policies.html#rules)
-- [ ] Support all [Content comparison operators](https://documentation.wazuh.com/current/user-manual/capabilities/sec-config-assessment/creating-custom-policies.html#id8)
-- [ ] Support all [Numeric comparison operators](https://documentation.wazuh.com/current/user-manual/capabilities/sec-config-assessment/creating-custom-policies.html#id9)
+- [X] Variable support
+- [X] Support check conditions [(All, any, none)](https://documentation.wazuh.com/current/user-manual/capabilities/sec-config-assessment/creating-custom-policies.html#condition)
+- [X] Rule type ['Directory'](https://documentation.wazuh.com/current/user-manual/capabilities/sec-config-assessment/creating-custom-policies.html#rules)
+- [X] Rule type ['Process'](https://documentation.wazuh.com/current/user-manual/capabilities/sec-config-assessment/creating-custom-policies.html#rules)
+- [X] Rule type ['Commands'](https://documentation.wazuh.com/current/user-manual/capabilities/sec-config-assessment/creating-custom-policies.html#rules)
+- [X] Rule type ['Registry (Windows Only)'](https://documentation.wazuh.com/current/user-manual/capabilities/sec-config-assessment/creating-custom-policies.html#rules)
+- [X] Support all [Content comparison operators](https://documentation.wazuh.com/current/user-manual/capabilities/sec-config-assessment/creating-custom-policies.html#id8)
+- [X] Support all [Numeric comparison operators](https://documentation.wazuh.com/current/user-manual/capabilities/sec-config-assessment/creating-custom-policies.html#id9)
 - [ ] Pass all [examples](https://documentation.wazuh.com/current/user-manual/capabilities/sec-config-assessment/creating-custom-policies.html#examples)
