@@ -1,9 +1,8 @@
-﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
-VisualStudioVersion = 17.13.35913.81 d17.13
+VisualStudioVersion = 17.5.2.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SCA_Scanner", "SCA_Scanner\SCA_Scanner.csproj", "{43420162-2047-4ABC-A80C-18129E208EAB}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SCAScanner", "SCAScanner.csproj", "{C408874D-3008-75D0-5392-8B0B81252E50}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -11,15 +10,15 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{43420162-2047-4ABC-A80C-18129E208EAB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{43420162-2047-4ABC-A80C-18129E208EAB}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{43420162-2047-4ABC-A80C-18129E208EAB}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{43420162-2047-4ABC-A80C-18129E208EAB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C408874D-3008-75D0-5392-8B0B81252E50}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C408874D-3008-75D0-5392-8B0B81252E50}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C408874D-3008-75D0-5392-8B0B81252E50}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C408874D-3008-75D0-5392-8B0B81252E50}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
-		SolutionGuid = {D12194D5-1365-404E-B65A-0F6236D3B94A}
+		SolutionGuid = {5FC9E9BD-352F-45B5-B99A-25EB00B42A22}
 	EndGlobalSection
 EndGlobal
