@@ -1,8 +1,6 @@
 // =============================================================================
 //  Wazuh SCA Policy Scanner — C# Implementation
-//  Usage:  ./SCAScanner scan [path/to/policy.yaml]
-//          ./SCAScanner validate [path/to/policy.yaml]
-//          ./SCAScanner check "f:filename"
+//  Usage:  ./SCAScanner <path/to/policy.yaml>
 //          ./SCAScanner -h | --help
 // =============================================================================
 
@@ -59,167 +57,115 @@ static void PrintHelp()
 {
     PrintBanner();
     WriteLine("USAGE:", ConsoleColor.White);
-    Console.WriteLine("  SCAScanner scan [path/to/policy.yaml]     Run all checks from a policy file");
-    Console.WriteLine("  SCAScanner validate [path/to/policy.yaml] Show which checks are invalid");
-    Console.WriteLine("  SCAScanner check \"f:filename\"             Check a specific file");
-    Console.WriteLine("  SCAScanner -h, --help                      Show this help message");
+    Console.WriteLine("  SCAScanner <path/to/policy.yaml>   Run all checks from a policy file");
+    Console.WriteLine("  SCAScanner <path/to/dir>           Scan all .yml/.yaml policies in a directory,");
+    Console.WriteLine("                                     skipping those whose requirements don't apply");
+    Console.WriteLine("  SCAScanner -h, --help              Show this help message");
     Console.WriteLine();
     WriteLine("EXAMPLES:", ConsoleColor.White);
-    Console.WriteLine("  SCAScanner scan Policies/sample_policy.yaml");
-    Console.WriteLine("  SCAScanner validate Policies/sample_policy.yaml");
-    Console.WriteLine("  SCAScanner check \"f:/etc/passwd\"");
+    Console.WriteLine("  SCAScanner Policies/sample_policy.yaml");
+    Console.WriteLine("  SCAScanner Policies/");
     Console.WriteLine();
 }
 
-// ── Validate Command ─────────────────────────────────────────────────────────
+// ── Requirements check (silent) ──────────────────────────────────────────────
 
-static int ValidateCommand(string policyPath)
+static bool RequirementsMet(SCAPolicy policy)
 {
-    if (!File.Exists(policyPath))
+    if (policy.Requirements is null) return true;
+    var reqCheck = new Check
     {
-        WriteFail($"Error: policy file not found → {policyPath}\n");
-        return 1;
-    }
+        Id        = 0,
+        Title     = policy.Requirements.Title,
+        Condition = policy.Requirements.Condition,
+        Rules     = policy.Requirements.Rules
+    };
+    return RuleChecker.EvaluateCheck(reqCheck, policy.Variables).Passed;
+}
 
-    SCAPolicy policy;
-    try
-    {
-        policy = LoadPolicy(policyPath);
-    }
-    catch (Exception ex)
-    {
-        WriteFail($"Error parsing policy YAML: {ex.Message}\n");
-        return 1;
-    }
+// ── Directory Scan ────────────────────────────────────────────────────────────
+
+static int ScanDirectory(string dirPath)
+{
+    var files = Directory.GetFiles(dirPath, "*.yml")
+        .Concat(Directory.GetFiles(dirPath, "*.yaml"))
+        .OrderBy(f => f)
+        .ToList();
 
     PrintBanner();
-    Console.ForegroundColor = ConsoleColor.White;
-    Console.WriteLine($"  Policy   : {policy.Policy.Name}");
-    Console.WriteLine($"  ID       : {policy.Policy.Id}");
-    Console.WriteLine($"  Checks   : {policy.Checks.Count}");
-    Console.ResetColor();
+
+    if (files.Count == 0)
+    {
+        WriteFail($"  No .yml / .yaml files found in {dirPath}\n");
+        return 1;
+    }
+
+    WriteLine("  POLICY DISCOVERY", ConsoleColor.White);
+    Console.WriteLine($"  Directory : {Path.GetFullPath(dirPath)}");
+    Console.WriteLine($"  Found     : {files.Count} policy file(s)");
     Console.WriteLine();
 
-    int totalValid = 0, totalInvalid = 0;
-    var invalidChecks = new List<(int Id, string Title, string Error)>();
+    // ── Check requirements for each file ──────────────────────────────────────
+    var applicable = new List<string>();
+    var skipped    = new List<string>();
 
-    // Validate requirements rules if present
-    if (policy.Requirements is not null)
+    WriteLine("  Checking requirements...", ConsoleColor.DarkGray);
+    foreach (var file in files)
     {
-        foreach (var rule in policy.Requirements.Rules)
+        var name = Path.GetFileName(file);
+        SCAPolicy policy;
+        try { policy = LoadPolicy(file); }
+        catch
         {
-            try
-            {
-                RuleParser.Parse(rule, policy.Variables);
-            }
-            catch (Exception ex)
-            {
-                invalidChecks.Add((0, "Requirements", $"Invalid rule: {rule}\n            Error: {ex.Message}"));
-                totalInvalid++;
-            }
+            Write($"    ! {name,-40}", ConsoleColor.DarkYellow);
+            WriteLine("  [parse error — skipped]", ConsoleColor.DarkYellow);
+            skipped.Add(file);
+            continue;
         }
-        if (policy.Requirements.Rules.Count > 0 && totalInvalid == 0)
-            totalValid += policy.Requirements.Rules.Count;
-    }
 
-    // Validate all check rules
-    foreach (var check in policy.Checks)
-    {
-        bool hasError = false;
-        foreach (var rule in check.Rules)
+        if (RequirementsMet(policy))
         {
-            try
-            {
-                RuleParser.Parse(rule, policy.Variables);
-            }
-            catch (Exception ex)
-            {
-                if (!hasError)
-                {
-                    invalidChecks.Add((check.Id, check.Title, $"Invalid rule: {rule}\n            Error: {ex.Message}"));
-                    hasError = true;
-                }
-                totalInvalid++;
-            }
+            Write($"    ✓ {name,-40}", ConsoleColor.Green);
+            string note = policy.Requirements is null ? "no requirements" : "requirements met";
+            WriteLine($"  [{note}]", ConsoleColor.DarkGray);
+            applicable.Add(file);
         }
-        if (!hasError)
-            totalValid += check.Rules.Count;
-    }
-
-    Console.WriteLine(new string('═', 68));
-    WriteLine("  VALIDATION RESULTS", ConsoleColor.White);
-    Console.WriteLine(new string('═', 68));
-
-    if (invalidChecks.Count == 0)
-    {
-        WritePass($"  ✓ All {totalValid} rules are valid and can be parsed\n");
-        return 0;
-    }
-
-    WriteFail($"  ✗ {invalidChecks.Count} check(s) have invalid rules:\n");
-    foreach (var (id, title, error) in invalidChecks)
-    {
-        if (id == 0)
-            Write($"    [REQS] ", ConsoleColor.DarkGray);
         else
-            Write($"    [{id,-4}] ", ConsoleColor.DarkGray);
-        WriteFail($"{title}\n");
-        WriteGray($"            {error}\n");
+        {
+            Write($"    ✗ {name,-40}", ConsoleColor.DarkGray);
+            WriteLine("  [requirements not met — skipped]", ConsoleColor.DarkGray);
+            skipped.Add(file);
+        }
     }
-    Console.WriteLine($"  Valid rules   : {totalValid}");
-    Console.WriteLine($"  Invalid rules : {totalInvalid}");
+
     Console.WriteLine();
 
-    return 1;
-}
-
-// ── Check Command ────────────────────────────────────────────────────────────
-
-static int CheckCommand(string checkSpec)
-{
-    // Parse the check spec (e.g., "f:filename" or "d:dirname")
-    PrintBanner();
-    
-    if (!checkSpec.Contains(':'))
+    if (applicable.Count == 0)
     {
-        WriteFail("Error: invalid check specification format\n");
-        WriteFail("Expected format: \"f:filename\" or \"d:dirname\"\n");
+        WriteFail("  No applicable policies found for this system.\n");
         return 1;
     }
 
-    var parts = checkSpec.Split(':', 2);
-    var type = parts[0];
-    var target = parts[1];
-
-    WriteLine("CHECK RESULT", ConsoleColor.White);
-    Console.WriteLine();
-    
-    Write("  Type   : ", ConsoleColor.DarkGray);
-    Console.WriteLine(type == "f" ? "File" : type == "d" ? "Directory" : "Unknown");
-    Write("  Target : ", ConsoleColor.DarkGray);
-    Console.WriteLine(target);
+    WriteLine($"  Running {applicable.Count} applicable policy file(s)...", ConsoleColor.White);
     Console.WriteLine();
 
-    // Validate that the target exists
-    bool exists = false;
-    if (type == "f")
-        exists = File.Exists(target);
-    else if (type == "d")
-        exists = Directory.Exists(target);
+    // ── Run each applicable policy ────────────────────────────────────────────
+    int overallFailed = 0;
+    for (int i = 0; i < applicable.Count; i++)
+    {
+        WriteLine($"{'═', -3} [{i + 1}/{applicable.Count}] {Path.GetFileName(applicable[i])} " +
+                  new string('═', Math.Max(0, 52 - Path.GetFileName(applicable[i]).Length)),
+                  ConsoleColor.Cyan);
+        Console.WriteLine();
+        int result = ScanCommand(applicable[i]);
+        if (result != 0) overallFailed++;
+        Console.WriteLine();
+    }
 
-    if (exists)
-    {
-        WritePass("  ✓ Target found and is accessible\n");
-        return 0;
-    }
-    else
-    {
-        WriteFail($"  ✗ Target not found\n");
-        return 1;
-    }
+    return overallFailed > 0 ? 1 : 0;
 }
 
-// ── Scan Command (Default) ───────────────────────────────────────────────────
+// ── Scan Command ─────────────────────────────────────────────────────────────
 
 static int ScanCommand(string policyPath)
 {
@@ -434,25 +380,9 @@ if (args.Length == 0 || args[0] == "-h" || args[0] == "--help")
     return 0;
 }
 
-string command = args[0].ToLower();
+string target = args[0];
 
-if (command == "scan")
-    return ScanCommand(args.Length > 1 ? args[1] : "Policies/sample_policy.yaml");
-else if (command == "validate")
-    return ValidateCommand(args.Length > 1 ? args[1] : "Policies/sample_policy.yaml");
-else if (command == "check")
-{
-    if (args.Length > 1)
-        return CheckCommand(args[1]);
-    else
-    {
-        WriteFail("Error: check command requires a check specification\n");
-        return 1;
-    }
-}
-else
-{
-    WriteFail($"Error: unknown command '{command}'\n");
-    PrintHelp();
-    return 1;
-}
+if (Directory.Exists(target))
+    return ScanDirectory(target);
+
+return ScanCommand(target);
