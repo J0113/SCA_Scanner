@@ -76,16 +76,16 @@ public static class RuleParser
     /// Parse a raw SCA rule string into a <see cref="ParsedRule"/>, expanding
     /// any $variable references beforehand.
     /// </summary>
-    public static ParsedRule Parse(string raw, Dictionary<string, string>? variables = null)
+    public static ParsedRule Parse(string raw, PolicyVariables? variables = null)
     {
-        var original = raw;
+        string original = raw;
 
         // Expand $variables
-        if (variables is not null)
-            foreach (var (k, v) in variables)
+        if (variables?.HasVariables == true)
+            foreach (var (k, v) in variables.Values)
                 raw = raw.Replace(k, v);
 
-        var rule = new ParsedRule { OriginalText = original };
+        ParsedRule rule = new() { OriginalText = original };
 
         // ── Overall negation ─────────────────────────────────────────────
         // Wazuh supports both "not " prefix and leading "!" (for non-registry)
@@ -119,7 +119,7 @@ public static class RuleParser
         {
             // Registry uses a 3-part format:  KEY -> ValueName -> DataPattern
             // All three parts separated by " -> "; DataPattern is optional.
-            var regParts = raw.Split(ArrowSeparator, 3, StringSplitOptions.None);
+            string[] regParts = raw.Split(ArrowSeparator, 3, StringSplitOptions.None);
             rule.Target = regParts[0].Trim();
             if (regParts.Length >= 2)
             {
@@ -132,13 +132,13 @@ public static class RuleParser
         else
         {
             // Split on the FIRST occurrence of " -> "
-            var parts = raw.Split(ArrowSeparator, 2, StringSplitOptions.None);
+            string[] parts = raw.Split(ArrowSeparator, 2, StringSplitOptions.None);
             rule.Target = parts[0].Trim();
             if (parts.Length == 2)
             {
                 rule.HasContentCheck = true;
                 // Each segment separated by " && " is an independent condition
-                foreach (var seg in parts[1].Split(AndSeparator, StringSplitOptions.None))
+                foreach (string seg in parts[1].Split(AndSeparator, StringSplitOptions.None))
                     rule.ContentConditions.Add(ParseContentCondition(seg.Trim()));
             }
         }
@@ -149,7 +149,7 @@ public static class RuleParser
     // ── Content condition parser ──────────────────────────────────────────
     private static ContentCondition ParseContentCondition(string s)
     {
-        var cond = new ContentCondition();
+        ContentCondition cond = new();
 
         if (s.StartsWith('!'))
         {
@@ -180,7 +180,7 @@ public static class RuleParser
     private static void ParseNumericCondition(ContentCondition cond, string s)
     {
         const string sep = " compare ";
-        var idx = s.IndexOf(sep, StringComparison.Ordinal);
+        int idx = s.IndexOf(sep, StringComparison.Ordinal);
 
         if (idx < 0)
         {
@@ -189,7 +189,7 @@ public static class RuleParser
         }
 
         cond.Pattern = s[..idx];
-        var comparison = s[(idx + sep.Length)..].Trim().Split(' ', 2);
+        string[] comparison = s[(idx + sep.Length)..].Trim().Split(' ', 2);
 
         cond.NumericOp = comparison[0] switch
         {
@@ -202,7 +202,7 @@ public static class RuleParser
             _    => NumericComparison.Equal
         };
 
-        if (comparison.Length > 1 && double.TryParse(comparison[1], out var v))
+        if (comparison.Length > 1 && double.TryParse(comparison[1], out double v))
             cond.NumericValue = v;
     }
 
@@ -212,12 +212,12 @@ public static class RuleParser
 
     public static string Explain(ParsedRule rule)
     {
-        var sb = new StringBuilder();
-        var neg = rule.Negated ? "NOT " : string.Empty;
+        StringBuilder sb = new();
+        string neg = rule.Negated ? "NOT " : string.Empty;
 
         if (!rule.HasContentCheck)
         {
-            var verb = rule.Type switch
+            string verb = rule.Type switch
             {
                 RuleType.File      => $"{neg}File '{rule.Target}' must exist",
                 RuleType.Directory => $"{neg}Directory '{rule.Target}' must exist",
@@ -234,7 +234,7 @@ public static class RuleParser
             && rule.ContentConditions.Count == 0)
             return $"{neg}Registry value '{rule.RegistryValueName}' must exist in key '{rule.Target}'";
 
-        var src = rule.Type switch
+        string src = rule.Type switch
         {
             RuleType.Command   => $"output of `{rule.Target}`",
             RuleType.Registry  => rule.RegistryValueName is not null
@@ -253,7 +253,7 @@ public static class RuleParser
         else
         {
             sb.AppendLine($"{neg}A single line in {src} must satisfy ALL of:");
-            for (var i = 0; i < rule.ContentConditions.Count; i++)
+            for (int i = 0; i < rule.ContentConditions.Count; i++)
                 sb.Append($"\n           [{i + 1}] {ExplainCondition(rule.ContentConditions[i], src)}");
         }
 
@@ -271,7 +271,7 @@ public static class RuleParser
 
     private static string ExplainNumeric(ContentCondition c, string source)
     {
-        var opStr = c.NumericOp switch
+        string opStr = c.NumericOp switch
         {
             NumericComparison.LessThan           => "less than",
             NumericComparison.LessThanOrEqual    => "less than or equal to",
@@ -281,7 +281,7 @@ public static class RuleParser
             NumericComparison.GreaterThan        => "greater than",
             _                                    => "compared to"
         };
-        var neg = c.Negated ? "NOT " : string.Empty;
+        string neg = c.Negated ? "NOT " : string.Empty;
         return $"{neg}Numeric value captured by `{c.Pattern}` in {source} must be {opStr} {c.NumericValue}";
     }
 }

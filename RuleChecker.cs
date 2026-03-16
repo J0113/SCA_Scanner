@@ -26,9 +26,9 @@ public static class RuleChecker
     // Check evaluation  (applies condition: all / any / none)
     // =========================================================================
 
-    public static CheckResult EvaluateCheck(Check check, Dictionary<string, string>? variables)
+    public static CheckResult EvaluateCheck(Check check, PolicyVariables? variables)
     {
-        var results = check.Rules
+        List<RuleResult> results = check.Rules
             .Select(r => EvaluateRule(RuleParser.Parse(r, variables)))
             .ToList();
 
@@ -42,7 +42,7 @@ public static class RuleChecker
             _      => false
         };
 
-        var reason = $"Condition '{check.Condition.ToUpper()}': {passCount}/{results.Count} rules passed";
+        string reason = $"Condition '{check.Condition.ToUpper()}': {passCount}/{results.Count} rules passed";
         return new CheckResult(passed, reason, results);
     }
 
@@ -52,7 +52,7 @@ public static class RuleChecker
 
     public static RuleResult EvaluateRule(ParsedRule rule)
     {
-        var (innerPassed, detail) = rule.Type switch
+        (bool innerPassed, string detail) = rule.Type switch
         {
             RuleType.File      => CheckFile(rule),
             RuleType.Directory => CheckDirectory(rule),
@@ -79,14 +79,14 @@ public static class RuleChecker
 
         if (!rule.HasContentCheck)
         {
-            var info      = new FileInfo(rule.Target);
-            var lineCount = File.ReadAllLines(rule.Target).Length;
+            FileInfo info = new(rule.Target);
+            int lineCount = File.ReadAllLines(rule.Target).Length;
             return (true, $"File exists: {rule.Target}  ({FormatBytes(info.Length)}, {lineCount} lines)");
         }
 
         try
         {
-            var content = File.ReadAllText(rule.Target);
+            string content = File.ReadAllText(rule.Target);
             return EvaluateContent(content, rule.ContentConditions, label: $"'{rule.Target}'");
         }
         catch (Exception ex)
@@ -109,10 +109,10 @@ public static class RuleChecker
 
         try
         {
-            foreach (var file in Directory.EnumerateFiles(rule.Target))
+            foreach (string file in Directory.EnumerateFiles(rule.Target))
             {
-                var content = File.ReadAllText(file);
-                var (matched, detail) = EvaluateContent(content, rule.ContentConditions, label: Path.GetFileName(file));
+                string content = File.ReadAllText(file);
+                (bool matched, string detail) = EvaluateContent(content, rule.ContentConditions, label: Path.GetFileName(file));
                 if (matched) return (true, $"Match in {Path.GetFileName(file)}: {detail}");
             }
             return (false, $"No file in '{rule.Target}' matched the conditions");
@@ -126,12 +126,12 @@ public static class RuleChecker
     // ── Process ──────────────────────────────────────────────────────────────
     private static (bool, string) CheckProcess(ParsedRule rule)
     {
-        var procs = Process.GetProcessesByName(rule.Target);
+        Process[] procs = Process.GetProcessesByName(rule.Target);
         bool running = procs.Length > 0;
 
         if (running)
         {
-            var pids = string.Join(", ", procs.Select(p => p.Id));
+            string pids = string.Join(", ", procs.Select(p => p.Id));
             return (true, $"Process '{rule.Target}' is running  (PID: {pids})");
         }
         return (false, $"Process '{rule.Target}' is not running  (0 instances found)");
@@ -154,19 +154,19 @@ public static class RuleChecker
                 args  = $"-c \"{rule.Target.Replace("\"", "\\\"")}\"";
             }
 
-            var psi = new ProcessStartInfo(shell, args)
+            ProcessStartInfo psi = new(shell, args)
             {
                 RedirectStandardOutput = true,
                 RedirectStandardError  = true,
                 UseShellExecute        = false
             };
 
-            using var proc = Process.Start(psi)!;
+            using Process proc = Process.Start(psi)!;
             // Read stdout and stderr concurrently to avoid deadlock when
             // either buffer fills, then combine them (many commands — like dscl —
             // write diagnostic output to stderr rather than stdout).
-            var stdoutTask = proc.StandardOutput.ReadToEndAsync();
-            var stderrTask  = proc.StandardError.ReadToEndAsync();
+            Task<string> stdoutTask = proc.StandardOutput.ReadToEndAsync();
+            Task<string> stderrTask  = proc.StandardError.ReadToEndAsync();
             Task.WaitAll([stdoutTask, stderrTask], millisecondsTimeout: 10_000);
             proc.WaitForExit(5_000);
             string output = stdoutTask.Result + stderrTask.Result;
@@ -194,17 +194,17 @@ public static class RuleChecker
 
         try
         {
-            var keyPath = rule.Target;
+            string keyPath = rule.Target;
 
-            var firstBackslash = keyPath.IndexOf('\\');
+            int firstBackslash = keyPath.IndexOf('\\');
             if (firstBackslash < 0)
                 return (false, $"Invalid registry key path: {keyPath}");
 
-            var hiveName = keyPath[..firstBackslash].ToUpperInvariant();
-            var subKey   = keyPath[(firstBackslash + 1)..];
+            string hiveName = keyPath[..firstBackslash].ToUpperInvariant();
+            string subKey   = keyPath[(firstBackslash + 1)..];
 
             // Support both full names and common short aliases
-            var hive = hiveName switch
+            Microsoft.Win32.RegistryKey? hive = hiveName switch
             {
                 "HKEY_LOCAL_MACHINE"  or "HKLM" => Microsoft.Win32.Registry.LocalMachine,
                 "HKEY_CURRENT_USER"   or "HKCU" => Microsoft.Win32.Registry.CurrentUser,
@@ -217,7 +217,7 @@ public static class RuleChecker
             if (hive is null)
                 return (false, $"Unknown registry hive: '{hiveName}' — valid hives: HKLM, HKCU, HKCR, HKU, HKCC");
 
-            using var key = hive.OpenSubKey(subKey);
+            using Microsoft.Win32.RegistryKey? key = hive.OpenSubKey(subKey);
             if (key is null)
                 return (false, $"Registry key not found: {keyPath}");
 
@@ -231,11 +231,11 @@ public static class RuleChecker
             // ── 3-part: KEY -> ValueName -> [DataPattern] ─────────────────
             if (rule.RegistryValueName is not null)
             {
-                var value = key.GetValue(rule.RegistryValueName);
+                object? value = key.GetValue(rule.RegistryValueName);
                 if (value is null)
                     return (false, $"Registry value '{rule.RegistryValueName}' not found in '{keyPath}'");
 
-                var valueStr = value.ToString() ?? string.Empty;
+                string valueStr = value.ToString() ?? string.Empty;
 
                 // Value exists, no data pattern required
                 if (rule.ContentConditions.Count == 0)
@@ -247,8 +247,8 @@ public static class RuleChecker
             }
 
             // ── Fallback: match content against all name=value pairs ──────
-            var allValues = new System.Text.StringBuilder();
-            foreach (var name in key.GetValueNames())
+            System.Text.StringBuilder allValues = new();
+            foreach (string name in key.GetValueNames())
                 allValues.AppendLine($"{name}={key.GetValue(name)}");
 
             return EvaluateContent(allValues.ToString(), rule.ContentConditions, label: keyPath);
@@ -284,8 +284,8 @@ public static class RuleChecker
             return EvaluateSingleCondition(content, conditions[0], label);
 
         // Multi-condition (&&): look for a line that satisfies ALL conditions
-        var lines = SplitLines(content);
-        foreach (var line in lines)
+        string[] lines = SplitLines(content);
+        foreach (string line in lines)
         {
             if (conditions.All(c => LineMatchesCondition(line, c)))
                 return (true, $"Matched line in {label}: \"{Truncate(line.Trim(), 80)}\"");
@@ -302,12 +302,12 @@ public static class RuleChecker
         if (cond.Operator == ContentOperator.Numeric)
             return EvaluateNumeric(content, cond, label);
 
-        var lines = SplitLines(content);
+        string[] lines = SplitLines(content);
 
         if (!cond.Negated)
         {
             // Pass if ANY line matches the pattern
-            foreach (var line in lines)
+            foreach (string line in lines)
             {
                 if (MatchesPattern(line, cond.Pattern, cond.Operator))
                     return (true, $"Matched line in {label}: \"{Truncate(line.Trim(), 80)}\"");
@@ -319,7 +319,7 @@ public static class RuleChecker
         else
         {
             // Pass if NO line matches the pattern
-            foreach (var line in lines)
+            foreach (string line in lines)
             {
                 if (MatchesPattern(line, cond.Pattern, cond.Operator))
                     return (false, $"Forbidden pattern found in {label}: \"{Truncate(line.Trim(), 80)}\"");
@@ -337,7 +337,7 @@ public static class RuleChecker
         try   { regex = new Regex(cond.Pattern, RegexOptions.Multiline); }
         catch { return (false, $"Invalid numeric regex pattern: `{cond.Pattern}`"); }
 
-        var match = regex.Match(content);
+        Match match = regex.Match(content);
         if (!match.Success || match.Groups.Count < 2)
         {
             string sample = Truncate(content.Trim().ReplaceLineEndings(" "), 60);
@@ -358,7 +358,7 @@ public static class RuleChecker
             _                                    => false
         };
 
-        var sym = cond.NumericOp switch
+        string sym = cond.NumericOp switch
         {
             NumericComparison.LessThan           => "<",
             NumericComparison.LessThanOrEqual    => "<=",
