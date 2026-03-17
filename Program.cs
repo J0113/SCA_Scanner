@@ -198,7 +198,8 @@ static int ScanCommand(string policyPath, IReporter reporter)
 
 OutputLevel outputLevel = OutputLevel.Standard;
 string? logFile = null;
-string? target = null;
+string? csvFile = null;
+string? target  = null;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -224,6 +225,15 @@ for (int i = 0; i < args.Length; i++)
                 return 1;
             }
             break;
+        case "--csv":
+            if (i + 1 < args.Length)
+                csvFile = args[++i];
+            else
+            {
+                Console.Error.WriteLine("Error: --csv requires a file path argument.");
+                return 1;
+            }
+            break;
         default:
             if (target is null)
                 target = args[i];
@@ -243,8 +253,11 @@ if (target is null)
 }
 
 ConsoleReporter consoleReporter = new(outputLevel);
-IReporter reporter = logFile is not null
-    ? new CompositeReporter(consoleReporter, new FileReporter(logFile))
+List<IReporter> reporters = [consoleReporter];
+if (logFile is not null) reporters.Add(new FileReporter(logFile));
+if (csvFile is not null) reporters.Add(new CsvReporter(csvFile));
+IReporter reporter = reporters.Count > 1
+    ? new CompositeReporter([.. reporters])
     : consoleReporter;
 
 try

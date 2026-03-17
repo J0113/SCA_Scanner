@@ -49,6 +49,7 @@ public abstract class BaseReporter : IReporter
         WriteLine("  --display-details           Show full rule details in console output");
         WriteLine("  --no-details                Show only header and summary (no requirements or rules)");
         WriteLine("  -l, --log <file>            Write detailed output to a log file");
+        WriteLine("  --csv <file>                Write scan results as CSV (one row per check)");
         WriteLine("  -h, --help                  Show this help message");
         WriteLine();
         WriteLine("EXAMPLES:", ConsoleColor.White);
