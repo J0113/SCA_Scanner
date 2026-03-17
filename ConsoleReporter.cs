@@ -24,6 +24,7 @@ public sealed class ConsoleReporter : IReporter
 
     private void WritePass(string text) => Write(text, ConsoleColor.Green);
     private void WriteFail(string text) => Write(text, ConsoleColor.Red);
+    private void WriteInvalid(string text) => Write(text, ConsoleColor.Yellow);
     private void WriteLabel(string text) => Write(text, ConsoleColor.DarkCyan);
     private void WriteGray(string text) => Write(text, ConsoleColor.DarkGray);
 
@@ -119,7 +120,7 @@ public sealed class ConsoleReporter : IReporter
         }
         WriteLabel("  └─\n\n");
 
-        if (!requirementsResult.Passed)
+        if (requirementsResult.Status != CheckStatus.Passed)
         {
             WriteFail($"  ✗ Requirements NOT met — policy scan aborted.\n");
             WriteFail($"    {requirementsResult.Reason}\n");
@@ -181,7 +182,9 @@ public sealed class ConsoleReporter : IReporter
         {
             RuleResult ruleResult = ruleResults[i];
             WriteLabel($"  │  [{i + 1}] ");
-            if (ruleResult.Passed) WritePass("PASS"); else WriteFail("FAIL");
+            if (ruleResult.Invalid) WriteInvalid("INVALID");
+            else if (ruleResult.Passed) WritePass("PASS");
+            else WriteFail("FAIL");
             Console.WriteLine($"  {ruleResult.Detail}");
         }
     }
@@ -189,14 +192,19 @@ public sealed class ConsoleReporter : IReporter
     public void PrintCheckResult(Check check, CheckResult result, int totalPassed, int totalFailed)
     {
         Console.Write("  └─ ");
-        if (result.Passed)
+        if (result.Status == CheckStatus.Passed)
         {
             WritePass($"✓ PASSED");
             Console.WriteLine($"  ({result.Reason})");
         }
-        else
+        else if (result.Status == CheckStatus.Failed)
         {
             WriteFail($"✗ FAILED");
+            Console.WriteLine($"  ({result.Reason})");
+        }
+        else if (result.Status == CheckStatus.Invalid)
+        {
+            Write($"⚠ INVALID", ConsoleColor.DarkYellow);
             Console.WriteLine($"  ({result.Reason})");
         }
 
@@ -207,17 +215,19 @@ public sealed class ConsoleReporter : IReporter
     // Summary
     // =========================================================================
 
-    public void PrintScanSummary(int passed, int failed, List<ScanCheckResult> checkResults)
+    public void PrintScanSummary(int passed, int failed, int invalid, List<ScanCheckResult> checkResults)
     {
         Console.WriteLine(new string('═', 68));
         WriteLine("  SCAN SUMMARY", ConsoleColor.White);
         Console.WriteLine(new string('═', 68));
 
-        int total = passed + failed;
-        int score = total > 0 ? (int)Math.Round(passed * 100.0 / total) : 0;
+        int total = passed + failed + invalid;
+        int score = (passed + failed) > 0 ? (int)Math.Round(passed * 100.0 / (passed + failed)) : 0;
 
         WritePass($"  Passed  : {passed}\n");
         WriteFail($"  Failed  : {failed}\n");
+        Write("  Invalid : ", ConsoleColor.DarkYellow);
+        Console.WriteLine($"{invalid}");
         Console.WriteLine($"  Total   : {total}");
         Console.Write("  Score   : ");
 
@@ -232,10 +242,12 @@ public sealed class ConsoleReporter : IReporter
         foreach (ScanCheckResult result in checkResults)
         {
             Write($"    [{result.Id,-4}] ", ConsoleColor.DarkGray);
-            if (result.Passed)
+            if (result.Status == CheckStatus.Passed)
                 WritePass("✓ PASS");
-            else
+            else if (result.Status == CheckStatus.Failed)
                 WriteFail("✗ FAIL");
+            else if (result.Status == CheckStatus.Invalid)
+                Write("⚠ INVALID", ConsoleColor.DarkYellow);
             Console.WriteLine($"  {result.Title}");
         }
         Console.WriteLine();

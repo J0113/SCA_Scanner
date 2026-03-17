@@ -36,7 +36,7 @@ static bool RequirementsMet(SCAPolicy policy)
         Condition = policy.Requirements.Condition,
         Rules     = policy.Requirements.Rules
     };
-    return RuleChecker.EvaluateCheck(reqCheck, policy.Variables).Passed;
+    return RuleChecker.EvaluateCheck(reqCheck, policy.Variables).Status == CheckStatus.Passed;
 }
 
 // ── Directory Scan ────────────────────────────────────────────────────────────
@@ -146,13 +146,13 @@ static int ScanCommand(string policyPath, IReporter reporter)
         CheckResult reqResult = RuleChecker.EvaluateCheck(reqCheck, policy.Variables);
         reporter.PrintRequirementsSection(reqCheck, policy.Variables, reqResult);
 
-        if (!reqResult.Passed)
+        if (reqResult.Status != CheckStatus.Passed)
             return 1;
     }
 
     // ── Run checks ────────────────────────────────────────────────────────────────
 
-    int totalPassed = 0, totalFailed = 0;
+    int totalPassed = 0, totalFailed = 0, totalInvalid = 0;
     List<ScanCheckResult> checkResults = new();
 
     foreach (Check check in policy.Checks)
@@ -171,33 +171,25 @@ static int ScanCommand(string policyPath, IReporter reporter)
         reporter.PrintRuleResults(result.RuleResults);
         reporter.PrintCheckResult(check, result, totalPassed, totalFailed);
 
-        if (result.Passed)
+        checkResults.Add(new ScanCheckResult
         {
+            Id = check.Id,
+            Title = check.Title,
+            Status = result.Status,
+            Reason = result.Reason
+        });
+
+        if (result.Status == CheckStatus.Passed)
             totalPassed++;
-            checkResults.Add(new ScanCheckResult
-            {
-                Id = check.Id,
-                Title = check.Title,
-                Passed = true,
-                Reason = result.Reason
-            });
-        }
-        else
-        {
+        else if (result.Status == CheckStatus.Failed)
             totalFailed++;
-            checkResults.Add(new ScanCheckResult
-            {
-                Id = check.Id,
-                Title = check.Title,
-                Passed = false,
-                Reason = result.Reason
-            });
-        }
+        else if (result.Status == CheckStatus.Invalid)
+            totalInvalid++;
     }
 
     // ── Summary ───────────────────────────────────────────────────────────────────
 
-    reporter.PrintScanSummary(totalPassed, totalFailed, checkResults);
+    reporter.PrintScanSummary(totalPassed, totalFailed, totalInvalid, checkResults);
 
     return totalFailed > 0 ? 1 : 0;
 }

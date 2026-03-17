@@ -362,6 +362,8 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 
-
 # Macos/ VScode files
 .DS_Store
+
+# Test files
+SCA_test/

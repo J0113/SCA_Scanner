@@ -3,6 +3,29 @@ namespace SCAScanner;
 using YamlDotNet.Serialization;
 
 // ---------------------------------------------------------------------------
+// Check status enumeration
+// ---------------------------------------------------------------------------
+
+/// <summary>Status of a check result: Passed, Failed, or Invalid (unexecutable).</summary>
+public enum CheckStatus
+{
+    Passed,
+    Failed,
+    Invalid
+}
+
+// ---------------------------------------------------------------------------
+// Rule check result
+// ---------------------------------------------------------------------------
+
+/// <summary>Result of evaluating a single rule, with status and detail message.</summary>
+public sealed class RuleCheckResult
+{
+    public CheckStatus Status { get; set; }
+    public string Detail { get; set; } = string.Empty;
+}
+
+// ---------------------------------------------------------------------------
 // Policy variables for substitution (e.g., $hosts -> /etc/hosts)
 // ---------------------------------------------------------------------------
 public sealed class PolicyVariables
@@ -101,8 +124,8 @@ public sealed class ScanCheckResult
     /// <summary>Check title/name.</summary>
     public required string Title { get; init; }
 
-    /// <summary>Whether the check passed.</summary>
-    public required bool Passed { get; init; }
+    /// <summary>Status of the check result.</summary>
+    public required CheckStatus Status { get; init; }
 
     /// <summary>Reason for the result (e.g., "Condition 'ALL': 19/19 rules passed").</summary>
     public required string Reason { get; init; }

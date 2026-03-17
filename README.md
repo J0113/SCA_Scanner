@@ -19,4 +19,4 @@ Standalone tool to scan a system Compliance status with Security Configuration A
 - [X] Rule type ['Registry (Windows Only)'](https://documentation.wazuh.com/current/user-manual/capabilities/sec-config-assessment/creating-custom-policies.html#rules)
 - [X] Support all [Content comparison operators](https://documentation.wazuh.com/current/user-manual/capabilities/sec-config-assessment/creating-custom-policies.html#id8)
 - [X] Support all [Numeric comparison operators](https://documentation.wazuh.com/current/user-manual/capabilities/sec-config-assessment/creating-custom-policies.html#id9)
-- [ ] Pass all [examples](https://documentation.wazuh.com/current/user-manual/capabilities/sec-config-assessment/creating-custom-policies.html#examples)
+- [X] Pass all [examples](https://documentation.wazuh.com/current/user-manual/capabilities/sec-config-assessment/creating-custom-policies.html#examples)

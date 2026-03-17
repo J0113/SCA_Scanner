@@ -38,6 +38,10 @@ public sealed class ContentCondition
     public bool             Negated     { get; set; }
     public ContentOperator  Operator    { get; set; }
     public string           Pattern     { get; set; } = string.Empty;
+    /// <summary>True if this content condition is malformed and cannot be evaluated.</summary>
+    public bool             Invalid     { get; set; }
+    /// <summary>Reason why this condition is invalid (if Invalid is true).</summary>
+    public string?          InvalidReason { get; set; }
     // Numeric only
     public NumericComparison? NumericOp  { get; set; }
     public double?          NumericValue { get; set; }
@@ -54,6 +58,10 @@ public sealed class ParsedRule
     /// <summary>File path, process name, command string, or registry key path.</summary>
     public string                 Target            { get; set; } = string.Empty;
     public bool                   HasContentCheck   { get; set; }
+    /// <summary>True if the rule definition is malformed/incomplete and cannot be executed.</summary>
+    public bool                   Invalid           { get; set; }
+    /// <summary>Reason why the rule is invalid (if Invalid is true).</summary>
+    public string?                InvalidReason     { get; set; }
     /// <summary>
     /// Registry only: the value name in the 3-part format
     /// r:KEY -> ValueName -> DataPattern
@@ -127,7 +135,11 @@ public static class RuleParser
                 rule.RegistryValueName  = regParts[1].Trim();
             }
             if (regParts.Length >= 3)
-                rule.ContentConditions.Add(ParseContentCondition(regParts[2].Trim()));
+            {
+                // Multiple conditions separated by " && "
+                foreach (string seg in regParts[2].Split(AndSeparator, StringSplitOptions.None))
+                    rule.ContentConditions.Add(ParseContentCondition(seg.Trim()));
+            }
         }
         else
         {
@@ -141,6 +153,14 @@ public static class RuleParser
                 foreach (string seg in parts[1].Split(AndSeparator, StringSplitOptions.None))
                     rule.ContentConditions.Add(ParseContentCondition(seg.Trim()));
             }
+        }
+
+        // Check if any content conditions are invalid
+        var invalidCondition = rule.ContentConditions.FirstOrDefault(c => c.Invalid);
+        if (invalidCondition is not null)
+        {
+            rule.Invalid = true;
+            rule.InvalidReason = invalidCondition.InvalidReason;
         }
 
         return rule;
@@ -184,26 +204,72 @@ public static class RuleParser
 
         if (idx < 0)
         {
+            // No " compare " found - this is an incomplete numeric rule
             cond.Pattern = s;
+            cond.Invalid = true;
+            cond.InvalidReason = "Incomplete numeric condition: missing 'compare OPERATOR VALUE'";
             return;
         }
 
         cond.Pattern = s[..idx];
-        string[] comparison = s[(idx + sep.Length)..].Trim().Split(' ', 2);
+        string rest = s[(idx + sep.Length)..].Trim();
 
-        cond.NumericOp = comparison[0] switch
+        // Validate that there's something after "compare"
+        if (string.IsNullOrWhiteSpace(rest))
         {
-            "<"  => NumericComparison.LessThan,
-            "<=" => NumericComparison.LessThanOrEqual,
-            "==" => NumericComparison.Equal,
-            "!=" => NumericComparison.NotEqual,
-            ">=" => NumericComparison.GreaterThanOrEqual,
-            ">"  => NumericComparison.GreaterThan,
-            _    => NumericComparison.Equal
+            cond.Invalid = true;
+            cond.InvalidReason = "Incomplete numeric condition: missing operator after 'compare'";
+            return;
+        }
+
+        string[] comparison = rest.Split(' ', 2);
+
+        // Try to parse as operator + value
+        bool isValidOp = comparison[0] switch
+        {
+            "<" or "<=" or "==" or "!=" or ">=" or ">" => true,
+            _ => false
         };
 
-        if (comparison.Length > 1 && double.TryParse(comparison[1], out double v))
+        if (isValidOp)
+        {
+            cond.NumericOp = comparison[0] switch
+            {
+                "<"  => NumericComparison.LessThan,
+                "<=" => NumericComparison.LessThanOrEqual,
+                "==" => NumericComparison.Equal,
+                "!=" => NumericComparison.NotEqual,
+                ">=" => NumericComparison.GreaterThanOrEqual,
+                ">"  => NumericComparison.GreaterThan,
+                _    => NumericComparison.Equal
+            };
+
+            // Validate that we have a value to compare
+            if (comparison.Length < 2)
+            {
+                cond.Invalid = true;
+                cond.InvalidReason = "Incomplete numeric condition: missing value after operator";
+                return;
+            }
+
+            // Try to parse the value
+            if (!double.TryParse(comparison[1], out double v))
+            {
+                cond.Invalid = true;
+                cond.InvalidReason = $"Invalid numeric value '{comparison[1]}': must be a number";
+                return;
+            }
+
             cond.NumericValue = v;
+        }
+        else
+        {
+            // If we found " compare " but the next token isn't a valid operator,
+            // this is an incomplete numeric rule
+            cond.Invalid = true;
+            cond.InvalidReason = $"Incomplete numeric condition: '{comparison[0]}' is not a valid operator";
+            return;
+        }
     }
 
     // =========================================================================

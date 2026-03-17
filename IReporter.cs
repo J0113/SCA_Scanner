@@ -33,7 +33,7 @@ public interface IReporter
     // Summary
     // =========================================================================
 
-    void PrintScanSummary(int passed, int failed, List<ScanCheckResult> checkResults);
+    void PrintScanSummary(int passed, int failed, int invalid, List<ScanCheckResult> checkResults);
 
     // =========================================================================
     // Directory Scanning
