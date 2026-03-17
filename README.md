@@ -8,9 +8,9 @@ Standalone tool to scan a system Compliance status with Security Configuration A
 ## TODO:
 - [X] Runs on Windows 
 - [X] Runs on MacOS
-- [ ] Runs on Linux
-- [ ] Log to logfile
-- [ ] Output to file (in multiple formats, CSV, JSON and TEXT)
+- [X] Runs on Linux
+- [X] Log to logfile
+- [X] Output to file (in multiple formats, CSV, JSON and TEXT)
 - [X] Variable support
 - [X] Support check conditions [(All, any, none)](https://documentation.wazuh.com/current/user-manual/capabilities/sec-config-assessment/creating-custom-policies.html#condition)
 - [X] Rule type ['Directory'](https://documentation.wazuh.com/current/user-manual/capabilities/sec-config-assessment/creating-custom-policies.html#rules)

@@ -14,7 +14,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="Policies/sample_policy.yaml">
+    <None Update="Policies/example_windows11.yaml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="Policies/example_macos.yaml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="Policies/example_linux.yaml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

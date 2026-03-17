@@ -10,13 +10,9 @@ using SCAScanner;
 
 // ── Helper Functions ──────────────────────────────────────────────────────
 
-static SCAPolicy LoadPolicy(string path)
+static SCAPolicy LoadPolicy(string path, IDeserializer deserializer)
 {
     string yaml = File.ReadAllText(path);
-    IDeserializer deserializer = new DeserializerBuilder()
-        .WithNamingConvention(UnderscoredNamingConvention.Instance)
-        .IgnoreUnmatchedProperties()
-        .Build();
     return deserializer.Deserialize<SCAPolicy>(yaml);
 }
 
@@ -41,7 +37,7 @@ static bool RequirementsMet(SCAPolicy policy)
 
 // ── Directory Scan ────────────────────────────────────────────────────────────
 
-static int ScanDirectory(string dirPath, IReporter reporter)
+static int ScanDirectory(string dirPath, IReporter reporter, IDeserializer deserializer)
 {
     List<string> files = Directory.GetFiles(dirPath, "*.yml")
         .Concat(Directory.GetFiles(dirPath, "*.yaml"))
@@ -58,17 +54,15 @@ static int ScanDirectory(string dirPath, IReporter reporter)
 
     // ── Check requirements for each file ──────────────────────────────────────
     List<string> applicable = new();
-    List<string> skipped = new();
 
     foreach (string file in files)
     {
         string fileName = Path.GetFileName(file);
         SCAPolicy policy;
-        try { policy = LoadPolicy(file); }
-        catch
+        try { policy = LoadPolicy(file, deserializer); }
+        catch (Exception)
         {
             reporter.PrintRequirementCheckLine(fileName, false, "parse error — skipped");
-            skipped.Add(file);
             continue;
         }
 
@@ -81,7 +75,6 @@ static int ScanDirectory(string dirPath, IReporter reporter)
         else
         {
             reporter.PrintRequirementCheckLine(fileName, false, "requirements not met — skipped");
-            skipped.Add(file);
         }
     }
 
@@ -98,7 +91,7 @@ static int ScanDirectory(string dirPath, IReporter reporter)
     for (int i = 0; i < applicable.Count; i++)
     {
         reporter.PrintPolicyExecutionHeader(i + 1, applicable.Count, Path.GetFileName(applicable[i]));
-        int result = ScanCommand(applicable[i], reporter);
+        int result = ScanCommand(applicable[i], reporter, deserializer);
         if (result != 0) overallFailed++;
     }
 
@@ -109,7 +102,7 @@ static int ScanDirectory(string dirPath, IReporter reporter)
 
 // ── Scan Command ─────────────────────────────────────────────────────────
 
-static int ScanCommand(string policyPath, IReporter reporter)
+static int ScanCommand(string policyPath, IReporter reporter, IDeserializer deserializer)
 {
     if (!File.Exists(policyPath))
     {
@@ -120,7 +113,7 @@ static int ScanCommand(string policyPath, IReporter reporter)
     SCAPolicy policy;
     try
     {
-        policy = LoadPolicy(policyPath);
+        policy = LoadPolicy(policyPath, deserializer);
     }
     catch (Exception ex)
     {
@@ -253,19 +246,25 @@ if (target is null)
 }
 
 ConsoleReporter consoleReporter = new(outputLevel);
-List<IReporter> reporters = [consoleReporter];
+// Use object list so non-IReporter sub-reporters (e.g. CsvReporter) can be included
+List<object> reporters = [consoleReporter];
 if (logFile is not null) reporters.Add(new FileReporter(logFile));
 if (csvFile is not null) reporters.Add(new CsvReporter(csvFile));
 IReporter reporter = reporters.Count > 1
     ? new CompositeReporter([.. reporters])
     : consoleReporter;
 
+IDeserializer deserializer = new DeserializerBuilder()
+    .WithNamingConvention(UnderscoredNamingConvention.Instance)
+    .IgnoreUnmatchedProperties()
+    .Build();
+
 try
 {
     if (Directory.Exists(target))
-        return ScanDirectory(target, reporter);
+        return ScanDirectory(target, reporter, deserializer);
 
-    return ScanCommand(target, reporter);
+    return ScanCommand(target, reporter, deserializer);
 }
 finally
 {

@@ -35,16 +35,16 @@ public enum NumericComparison
 public sealed class ContentCondition
 {
     /// <summary>True when prefixed with ! (pattern must NOT be found).</summary>
-    public bool             Negated     { get; set; }
-    public ContentOperator  Operator    { get; set; }
-    public string           Pattern     { get; set; } = string.Empty;
+    public bool             Negated       { get; init; }
+    public ContentOperator  Operator      { get; init; }
+    public string           Pattern       { get; init; } = string.Empty;
     /// <summary>True if this content condition is malformed and cannot be evaluated.</summary>
-    public bool             Invalid     { get; set; }
+    public bool             Invalid       { get; init; }
     /// <summary>Reason why this condition is invalid (if Invalid is true).</summary>
-    public string?          InvalidReason { get; set; }
+    public string?          InvalidReason { get; init; }
     // Numeric only
-    public NumericComparison? NumericOp  { get; set; }
-    public double?          NumericValue { get; set; }
+    public NumericComparison? NumericOp   { get; init; }
+    public double?          NumericValue  { get; init; }
 }
 
 // ---------------------------------------------------------------------------
@@ -53,23 +53,23 @@ public sealed class ContentCondition
 public sealed class ParsedRule
 {
     /// <summary>True when the rule is prefixed with "not " or "!".</summary>
-    public bool                   Negated           { get; set; }
-    public RuleType               Type              { get; set; }
+    public bool                   Negated           { get; init; }
+    public RuleType               Type              { get; init; }
     /// <summary>File path, process name, command string, or registry key path.</summary>
-    public string                 Target            { get; set; } = string.Empty;
-    public bool                   HasContentCheck   { get; set; }
+    public string                 Target            { get; init; } = string.Empty;
+    public bool                   HasContentCheck   { get; init; }
     /// <summary>True if the rule definition is malformed/incomplete and cannot be executed.</summary>
-    public bool                   Invalid           { get; set; }
+    public bool                   Invalid           { get; init; }
     /// <summary>Reason why the rule is invalid (if Invalid is true).</summary>
-    public string?                InvalidReason     { get; set; }
+    public string?                InvalidReason     { get; init; }
     /// <summary>
     /// Registry only: the value name in the 3-part format
     /// r:KEY -> ValueName -> DataPattern
     /// </summary>
-    public string?                RegistryValueName { get; set; }
+    public string?                RegistryValueName { get; init; }
     /// <summary>One or more conditions connected by && in the original rule string.</summary>
-    public List<ContentCondition> ContentConditions { get; set; } = [];
-    public string                 OriginalText      { get; set; } = string.Empty;
+    public List<ContentCondition> ContentConditions { get; init; } = [];
+    public string                 OriginalText      { get; init; } = string.Empty;
 }
 
 // ---------------------------------------------------------------------------
@@ -93,183 +93,175 @@ public static class RuleParser
             foreach (var (k, v) in variables.Values)
                 raw = raw.Replace(k, v);
 
-        ParsedRule rule = new() { OriginalText = original };
-
         // ── Overall negation ─────────────────────────────────────────────
         // Wazuh supports both "not " prefix and leading "!" (for non-registry)
+        bool negated = false;
         if (raw.StartsWith("not ", StringComparison.OrdinalIgnoreCase))
         {
-            rule.Negated = true;
+            negated = true;
             raw = raw[4..];
         }
         // "!" negation only when NOT followed by a content-operator prefix
         else if (raw.Length > 2 && raw[0] == '!' && raw[1] != 'r' && raw[1] != 'n')
         {
-            rule.Negated = true;
+            negated = true;
             raw = raw[1..];
         }
 
         // ── Rule type prefix ──────────────────────────────────────────────
-        if      (raw.StartsWith("f:")) { rule.Type = RuleType.File;      raw = raw[2..]; }
-        else if (raw.StartsWith("d:")) { rule.Type = RuleType.Directory;  raw = raw[2..]; }
-        else if (raw.StartsWith("p:")) { rule.Type = RuleType.Process;    raw = raw[2..]; }
-        else if (raw.StartsWith("c:")) { rule.Type = RuleType.Command;    raw = raw[2..]; }
-        else if (raw.StartsWith("r:")) { rule.Type = RuleType.Registry;   raw = raw[2..]; }
+        RuleType type;
+        if      (raw.StartsWith("f:")) { type = RuleType.File;      raw = raw[2..]; }
+        else if (raw.StartsWith("d:")) { type = RuleType.Directory;  raw = raw[2..]; }
+        else if (raw.StartsWith("p:")) { type = RuleType.Process;    raw = raw[2..]; }
+        else if (raw.StartsWith("c:")) { type = RuleType.Command;    raw = raw[2..]; }
+        else if (raw.StartsWith("r:")) { type = RuleType.Registry;   raw = raw[2..]; }
         else
-        {
-            throw new InvalidOperationException(
-                $"Invalid rule format: '{original}'\n" +
-                "Rules must start with a type prefix: f:, d:, p:, c:, or r:");
-        }
+            return new ParsedRule
+            {
+                OriginalText  = original,
+                Negated       = negated,
+                Invalid       = true,
+                InvalidReason = $"Unknown rule prefix in '{original}' — must start with f:, d:, p:, c:, or r:"
+            };
 
         // ── Target vs content ─────────────────────────────────────────────
-        if (rule.Type == RuleType.Registry)
+        string target;
+        bool hasContentCheck       = false;
+        string? registryValueName  = null;
+        List<ContentCondition> conditions = [];
+
+        if (type == RuleType.Registry)
         {
             // Registry uses a 3-part format:  KEY -> ValueName -> DataPattern
             // All three parts separated by " -> "; DataPattern is optional.
             string[] regParts = raw.Split(ArrowSeparator, 3, StringSplitOptions.None);
-            rule.Target = regParts[0].Trim();
+            target = regParts[0].Trim();
             if (regParts.Length >= 2)
             {
-                rule.HasContentCheck    = true;
-                rule.RegistryValueName  = regParts[1].Trim();
+                hasContentCheck   = true;
+                registryValueName = regParts[1].Trim();
             }
             if (regParts.Length >= 3)
             {
                 // Multiple conditions separated by " && "
                 foreach (string seg in regParts[2].Split(AndSeparator, StringSplitOptions.None))
-                    rule.ContentConditions.Add(ParseContentCondition(seg.Trim()));
+                    conditions.Add(ParseContentCondition(seg.Trim()));
             }
         }
         else
         {
             // Split on the FIRST occurrence of " -> "
             string[] parts = raw.Split(ArrowSeparator, 2, StringSplitOptions.None);
-            rule.Target = parts[0].Trim();
+            target = parts[0].Trim();
             if (parts.Length == 2)
             {
-                rule.HasContentCheck = true;
+                hasContentCheck = true;
                 // Each segment separated by " && " is an independent condition
                 foreach (string seg in parts[1].Split(AndSeparator, StringSplitOptions.None))
-                    rule.ContentConditions.Add(ParseContentCondition(seg.Trim()));
+                    conditions.Add(ParseContentCondition(seg.Trim()));
             }
         }
 
-        // Check if any content conditions are invalid
-        var invalidCondition = rule.ContentConditions.FirstOrDefault(c => c.Invalid);
-        if (invalidCondition is not null)
-        {
-            rule.Invalid = true;
-            rule.InvalidReason = invalidCondition.InvalidReason;
-        }
+        // Propagate invalidity from content conditions
+        ContentCondition? invalidCondition = conditions.FirstOrDefault(c => c.Invalid);
 
-        return rule;
+        return new ParsedRule
+        {
+            OriginalText      = original,
+            Negated           = negated,
+            Type              = type,
+            Target            = target,
+            HasContentCheck   = hasContentCheck,
+            RegistryValueName = registryValueName,
+            ContentConditions = conditions,
+            Invalid           = invalidCondition is not null,
+            InvalidReason     = invalidCondition?.InvalidReason
+        };
     }
 
     // ── Content condition parser ──────────────────────────────────────────
     private static ContentCondition ParseContentCondition(string s)
     {
-        ContentCondition cond = new();
-
-        if (s.StartsWith('!'))
-        {
-            cond.Negated = true;
-            s = s[1..];
-        }
+        bool negated = s.StartsWith('!');
+        if (negated) s = s[1..];
 
         if (s.StartsWith("r:"))
-        {
-            cond.Operator = ContentOperator.Regex;
-            cond.Pattern  = s[2..];
-        }
-        else if (s.StartsWith("n:"))
-        {
-            cond.Operator = ContentOperator.Numeric;
-            ParseNumericCondition(cond, s[2..]);
-        }
-        else
-        {
-            cond.Operator = ContentOperator.Literal;
-            cond.Pattern  = s;
-        }
+            return new ContentCondition { Negated = negated, Operator = ContentOperator.Regex, Pattern = s[2..] };
 
-        return cond;
+        if (s.StartsWith("n:"))
+            return ParseNumericCondition(negated, s[2..]);
+
+        return new ContentCondition { Negated = negated, Operator = ContentOperator.Literal, Pattern = s };
     }
 
     // Format: REGEX_WITH_(\d+) compare OPERATOR VALUE
-    private static void ParseNumericCondition(ContentCondition cond, string s)
+    private static ContentCondition ParseNumericCondition(bool negated, string s)
     {
         const string sep = " compare ";
         int idx = s.IndexOf(sep, StringComparison.Ordinal);
 
         if (idx < 0)
-        {
-            // No " compare " found - this is an incomplete numeric rule
-            cond.Pattern = s;
-            cond.Invalid = true;
-            cond.InvalidReason = "Incomplete numeric condition: missing 'compare OPERATOR VALUE'";
-            return;
-        }
+            return new ContentCondition
+            {
+                Negated = negated, Operator = ContentOperator.Numeric, Pattern = s,
+                Invalid = true, InvalidReason = "Incomplete numeric condition: missing 'compare OPERATOR VALUE'"
+            };
 
-        cond.Pattern = s[..idx];
-        string rest = s[(idx + sep.Length)..].Trim();
+        string pattern = s[..idx];
+        string rest    = s[(idx + sep.Length)..].Trim();
 
-        // Validate that there's something after "compare"
         if (string.IsNullOrWhiteSpace(rest))
-        {
-            cond.Invalid = true;
-            cond.InvalidReason = "Incomplete numeric condition: missing operator after 'compare'";
-            return;
-        }
+            return new ContentCondition
+            {
+                Negated = negated, Operator = ContentOperator.Numeric, Pattern = pattern,
+                Invalid = true, InvalidReason = "Incomplete numeric condition: missing operator after 'compare'"
+            };
 
         string[] comparison = rest.Split(' ', 2);
 
-        // Try to parse as operator + value
-        bool isValidOp = comparison[0] switch
+        // Map the operator token in a single pass — null means unrecognised
+        NumericComparison? parsedOp = comparison[0] switch
         {
-            "<" or "<=" or "==" or "!=" or ">=" or ">" => true,
-            _ => false
+            "<"  => NumericComparison.LessThan,
+            "<=" => NumericComparison.LessThanOrEqual,
+            "==" => NumericComparison.Equal,
+            "!=" => NumericComparison.NotEqual,
+            ">=" => NumericComparison.GreaterThanOrEqual,
+            ">"  => NumericComparison.GreaterThan,
+            _    => (NumericComparison?)null
         };
 
-        if (isValidOp)
-        {
-            cond.NumericOp = comparison[0] switch
+        if (parsedOp is null)
+            return new ContentCondition
             {
-                "<"  => NumericComparison.LessThan,
-                "<=" => NumericComparison.LessThanOrEqual,
-                "==" => NumericComparison.Equal,
-                "!=" => NumericComparison.NotEqual,
-                ">=" => NumericComparison.GreaterThanOrEqual,
-                ">"  => NumericComparison.GreaterThan,
-                _    => NumericComparison.Equal
+                Negated = negated, Operator = ContentOperator.Numeric, Pattern = pattern,
+                Invalid = true,
+                InvalidReason = $"Incomplete numeric condition: '{comparison[0]}' is not a valid operator"
             };
 
-            // Validate that we have a value to compare
-            if (comparison.Length < 2)
+        if (comparison.Length < 2)
+            return new ContentCondition
             {
-                cond.Invalid = true;
-                cond.InvalidReason = "Incomplete numeric condition: missing value after operator";
-                return;
-            }
+                Negated = negated, Operator = ContentOperator.Numeric, Pattern = pattern,
+                Invalid = true, InvalidReason = "Incomplete numeric condition: missing value after operator"
+            };
 
-            // Try to parse the value
-            if (!double.TryParse(comparison[1], out double v))
+        if (!double.TryParse(comparison[1], out double v))
+            return new ContentCondition
             {
-                cond.Invalid = true;
-                cond.InvalidReason = $"Invalid numeric value '{comparison[1]}': must be a number";
-                return;
-            }
+                Negated = negated, Operator = ContentOperator.Numeric, Pattern = pattern,
+                Invalid = true,
+                InvalidReason = $"Invalid numeric value '{comparison[1]}': must be a number"
+            };
 
-            cond.NumericValue = v;
-        }
-        else
+        return new ContentCondition
         {
-            // If we found " compare " but the next token isn't a valid operator,
-            // this is an incomplete numeric rule
-            cond.Invalid = true;
-            cond.InvalidReason = $"Incomplete numeric condition: '{comparison[0]}' is not a valid operator";
-            return;
-        }
+            Negated      = negated,
+            Operator     = ContentOperator.Numeric,
+            Pattern      = pattern,
+            NumericOp    = parsedOp,
+            NumericValue = v
+        };
     }
 
     // =========================================================================

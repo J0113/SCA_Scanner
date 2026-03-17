@@ -6,9 +6,10 @@ using System.Text;
 
 /// <summary>
 /// Writes scan results as a CSV file. One row per check result.
-/// All IReporter methods are no-ops except PrintPolicyHeader, PrintCheckResult, and Dispose.
+/// Implements only <see cref="IPolicyReporter"/> and <see cref="ICheckReporter"/> —
+/// all other output is irrelevant for CSV export.
 /// </summary>
-public sealed class CsvReporter : IReporter, IDisposable
+public sealed class CsvReporter : IPolicyReporter, ICheckReporter, IDisposable
 {
     private static readonly string[] Headers =
     [
@@ -28,16 +29,29 @@ public sealed class CsvReporter : IReporter, IDisposable
     {
         _filePath = filePath;
 
-        _computerName = TryGetFqdn();
+        _computerName    = TryGetFqdn();
         _operatingSystem = RuntimeInformation.OSDescription;
-        _scanDate = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+        _scanDate        = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
     }
+
+    // ── IPolicyReporter ───────────────────────────────────────────────────
+
+    public void PrintBanner() { }
+    public void PrintHelp()   { }
 
     public void PrintPolicyHeader(SCAPolicy policy, string platform)
     {
         _standard = policy.Policy.Name;
         _version  = policy.Policy.Id;
     }
+
+    public void PrintRequirementsSection(Check requirementsCheck, PolicyVariables? variables, CheckResult requirementsResult) { }
+
+    // ── ICheckReporter ────────────────────────────────────────────────────
+
+    public void PrintCheckHeader(Check check) { }
+    public void PrintRuleExplanations(List<ParsedRule> parsedRules, Check check, PolicyVariables? variables) { }
+    public void PrintRuleResults(IReadOnlyList<RuleResult> ruleResults) { }
 
     public void PrintCheckResult(Check check, CheckResult result, int totalPassed, int totalFailed)
     {
@@ -56,14 +70,25 @@ public sealed class CsvReporter : IReporter, IDisposable
         ]);
     }
 
+    // ── IDisposable ───────────────────────────────────────────────────────
+
     public void Dispose()
     {
         var sb = new StringBuilder();
         sb.AppendLine(string.Join(",", Headers.Select(Escape)));
         foreach (var row in _rows)
             sb.AppendLine(string.Join(",", row.Select(Escape)));
-        File.WriteAllText(_filePath, sb.ToString(), Encoding.UTF8);
+        try
+        {
+            File.WriteAllText(_filePath, sb.ToString(), Encoding.UTF8);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"CsvReporter: failed to write '{_filePath}': {ex.Message}");
+        }
     }
+
+    // ── Helpers ───────────────────────────────────────────────────────────
 
     /// <summary>RFC 4180 CSV escaping: wrap in quotes if value contains comma, quote, or newline.</summary>
     private static string Escape(string value)
@@ -76,23 +101,6 @@ public sealed class CsvReporter : IReporter, IDisposable
     private static string TryGetFqdn()
     {
         try { return Dns.GetHostEntry("").HostName; }
-        catch { return Environment.MachineName; }
+        catch (Exception) { return Environment.MachineName; }
     }
-
-    // ── No-op IReporter methods ───────────────────────────────────────────────
-
-    public void PrintBanner() { }
-    public void PrintHelp() { }
-    public void PrintRequirementsSection(Check requirementsCheck, PolicyVariables? variables, CheckResult requirementsResult) { }
-    public void PrintCheckHeader(Check check) { }
-    public void PrintRuleExplanations(List<ParsedRule> parsedRules, Check check, PolicyVariables? variables) { }
-    public void PrintRuleResults(IReadOnlyList<RuleResult> ruleResults) { }
-    public void PrintScanSummary(int passed, int failed, int invalid, List<ScanCheckResult> checkResults) { }
-    public void PrintDiscoveryHeader(string directoryPath, int foundCount) { }
-    public void PrintRequirementCheckLine(string fileName, bool met, string? note) { }
-    public void PrintApplicablePoliciesLine(int applicableCount) { }
-    public void PrintPolicyExecutionHeader(int index, int total, string policyFileName) { }
-    public void PrintDirectoryScanComplete(int totalPolicies, int failedPolicies) { }
-    public void PrintError(string message) { }
-    public void PrintNoPolicesFound(string directoryPath) { }
 }

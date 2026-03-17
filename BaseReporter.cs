@@ -22,8 +22,7 @@ public abstract class BaseReporter : IReporter
     protected void WriteLabel(string text)   => Write(text, ConsoleColor.DarkCyan);
     protected void WriteGray(string text)    => Write(text, ConsoleColor.DarkGray);
 
-    protected static string Truncate(string text, int maxLength) =>
-        text.Length <= maxLength ? text : text[..maxLength] + "…";
+    protected static string Truncate(string text, int maxLength) => StringUtils.Truncate(text, maxLength);
 
     // =========================================================================
     // UI Structure
@@ -82,28 +81,20 @@ public abstract class BaseReporter : IReporter
     {
         if (Level == OutputLevel.Compact) return;
 
-        Requirements requirements = new()
-        {
-            Title       = requirementsCheck.Title,
-            Description = requirementsCheck.Description,
-            Condition   = requirementsCheck.Condition,
-            Rules       = requirementsCheck.Rules
-        };
-
         WriteLine("══ Requirements " + new string('═', 52), ConsoleColor.Cyan);
-        WriteLine($"  {requirements.Title}");
-        if (!string.IsNullOrWhiteSpace(requirements.Description))
-            WriteLine($"  {requirements.Description}");
+        WriteLine($"  {requirementsCheck.Title}");
+        if (!string.IsNullOrWhiteSpace(requirementsCheck.Description))
+            WriteLine($"  {requirementsCheck.Description}");
 
         WriteLabel("  ┌─ What requirements will be checked:\n");
-        List<ParsedRule> parsedReqRules = requirements.Rules
+        List<ParsedRule> parsedReqRules = requirementsCheck.Rules
             .Select(rule => RuleParser.Parse(rule, variables))
             .ToList();
         for (int i = 0; i < parsedReqRules.Count; i++)
         {
             WriteLabel($"  │  [{i + 1}] ");
             WriteLine(RuleParser.Explain(parsedReqRules[i]));
-            WriteGray($"  │       raw  : {requirements.Rules[i]}\n");
+            WriteGray($"  │       raw  : {requirementsCheck.Rules[i]}\n");
         }
         WriteLabel("  └─\n");
 
@@ -227,12 +218,11 @@ public abstract class BaseReporter : IReporter
         WriteLine(new string('═', 68));
 
         int total = passed + failed + invalid;
-        int score = (passed + failed) > 0 ? (int)Math.Round(passed * 100.0 / (passed + failed)) : 0;
+        int score = total > 0 ? (int)Math.Round(passed * 100.0 / total) : 0;
 
         WritePass($"  Passed  : {passed}\n");
         WriteFail($"  Failed  : {failed}\n");
-        Write("  Invalid : ", ConsoleColor.DarkYellow);
-        WriteLine($"{invalid}");
+        WriteLine($"  Invalid : {invalid}", ConsoleColor.DarkYellow);
         WriteLine($"  Total   : {total}");
         Write("  Score   : ");
 

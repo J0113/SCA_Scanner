@@ -18,6 +18,27 @@ public enum CheckStatus
 // Console output verbosity level
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Check condition enumeration
+// ---------------------------------------------------------------------------
+
+/// <summary>Logic applied to the rule list when evaluating a check or requirements block.</summary>
+public enum CheckCondition
+{
+    /// <summary>ALL rules must pass.</summary>
+    All,
+    /// <summary>At least one rule must pass.</summary>
+    Any,
+    /// <summary>No rules may pass (all must fail).</summary>
+    None,
+    /// <summary>Unrecognised condition string — check will be marked Invalid.</summary>
+    Unknown
+}
+
+// ---------------------------------------------------------------------------
+// Console output verbosity level
+// ---------------------------------------------------------------------------
+
 /// <summary>Controls how much detail the console reporter outputs.</summary>
 public enum OutputLevel
 {
@@ -27,17 +48,6 @@ public enum OutputLevel
     Standard,
     /// <summary>Everything: includes rule explanations and rule results per check.</summary>
     Detailed
-}
-
-// ---------------------------------------------------------------------------
-// Rule check result
-// ---------------------------------------------------------------------------
-
-/// <summary>Result of evaluating a single rule, with status and detail message.</summary>
-public sealed class RuleCheckResult
-{
-    public CheckStatus Status { get; set; }
-    public string Detail { get; set; } = string.Empty;
 }
 
 // ---------------------------------------------------------------------------
@@ -72,6 +82,8 @@ public sealed class SCAPolicy
     [YamlMember(Alias = "variables")]
     public Dictionary<string, string>? VariablesDict { get; set; }
 
+    private PolicyVariables? _variables;
+
     /// <summary>
     /// Parsed and wrapped variables for use throughout the application.
     /// </summary>
@@ -81,7 +93,7 @@ public sealed class SCAPolicy
         get
         {
             if (VariablesDict is null) return null;
-            return new PolicyVariables { Values = VariablesDict };
+            return _variables ??= new PolicyVariables { Values = VariablesDict };
         }
     }
 
@@ -107,9 +119,21 @@ public sealed class Requirements
 {
     public string       Title       { get; set; } = string.Empty;
     public string       Description { get; set; } = string.Empty;
-    /// <summary>all | any | none</summary>
+    /// <summary>YAML value: all | any | none</summary>
     public string       Condition   { get; set; } = "any";
     public List<string> Rules       { get; set; } = [];
+
+    private CheckCondition? _conditionEnum;
+    /// <summary>Parsed <see cref="CheckCondition"/> derived from the YAML <see cref="Condition"/> string.</summary>
+    [YamlIgnore]
+    public CheckCondition ConditionEnum =>
+        _conditionEnum ??= Condition.ToLowerInvariant() switch
+        {
+            "all"  => CheckCondition.All,
+            "any"  => CheckCondition.Any,
+            "none" => CheckCondition.None,
+            _      => CheckCondition.Unknown
+        };
 }
 
 // ---------------------------------------------------------------------------
@@ -122,9 +146,21 @@ public sealed class Check
     public string       Description { get; set; } = string.Empty;
     public string       Rationale   { get; set; } = string.Empty;
     public string       Remediation { get; set; } = string.Empty;
-    /// <summary>all | any | none</summary>
+    /// <summary>YAML value: all | any | none</summary>
     public string       Condition   { get; set; } = "all";
     public List<string> Rules       { get; set; } = [];
+
+    private CheckCondition? _conditionEnum;
+    /// <summary>Parsed <see cref="CheckCondition"/> derived from the YAML <see cref="Condition"/> string.</summary>
+    [YamlIgnore]
+    public CheckCondition ConditionEnum =>
+        _conditionEnum ??= Condition.ToLowerInvariant() switch
+        {
+            "all"  => CheckCondition.All,
+            "any"  => CheckCondition.Any,
+            "none" => CheckCondition.None,
+            _      => CheckCondition.Unknown
+        };
 }
 
 /// <summary>

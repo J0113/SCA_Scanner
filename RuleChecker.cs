@@ -22,6 +22,12 @@ public sealed record CheckResult(
 
 public static class RuleChecker
 {
+    private sealed class RuleCheckResult
+    {
+        public CheckStatus Status { get; set; }
+        public string Detail { get; set; } = string.Empty;
+    }
+
     // =========================================================================
     // Check evaluation  (applies condition: all / any / none)
     // =========================================================================
@@ -39,11 +45,11 @@ public static class RuleChecker
         int validCount = results.Count(r => !r.Invalid);
 
         // Evaluate based on condition type and whether there are invalid rules
-        string condType = check.Condition.ToLowerInvariant();
+        CheckCondition condType = check.ConditionEnum;
         CheckStatus status;
         string reason;
 
-        if (condType == "any")
+        if (condType == CheckCondition.Any)
         {
             // ANY: requires at least one rule to pass
             // If there's a valid pass, result is PASS (even with invalids)
@@ -60,19 +66,14 @@ public static class RuleChecker
                 status = CheckStatus.Invalid;
                 reason = "Check invalid: all rules cannot be executed";
             }
-            else if (!hasValidPass && validCount > 0)
+            else
             {
                 // All valid rules fail (none pass) → proven to fail
                 status = CheckStatus.Failed;
                 reason = $"Condition 'ANY': {passCount}/{validCount} rules passed";
             }
-            else
-            {
-                status = CheckStatus.Failed;
-                reason = $"Condition 'ANY': {passCount}/{validCount} rules passed";
-            }
         }
-        else if (condType == "all")
+        else if (condType == CheckCondition.All)
         {
             // ALL: requires all rules to pass
             // If there are any invalid rules, we can't confirm all pass → INVALID (unless proven to fail)
@@ -114,7 +115,7 @@ public static class RuleChecker
                 reason = $"Condition 'ALL': {passCount}/{validCount} rules passed";
             }
         }
-        else if (condType == "none")
+        else if (condType == CheckCondition.None)
         {
             // NONE: requires all rules to fail (none pass)
             // If we know at least one rule passed (without being invalid), result is FAIL
@@ -149,8 +150,9 @@ public static class RuleChecker
         }
         else
         {
-            status = CheckStatus.Failed;
-            reason = $"Unknown condition: {check.Condition}";
+            // CheckCondition.Unknown — unrecognised YAML value
+            status = CheckStatus.Invalid;
+            reason = $"Unknown condition '{check.Condition}' — must be 'all', 'any', or 'none'";
         }
 
         return new CheckResult(status, reason, results);
@@ -269,67 +271,16 @@ public static class RuleChecker
             return new RuleCheckResult { Status = CheckStatus.Passed, Detail = $"Directory exists: {foundDir}  ({count} files)" };
         }
 
-        // For directory rules: patterns are filename matches, not content searches
-        // - Literal operator = exact filename match
-        // - Regex operator = regex pattern to match against filenames
+        // For directory rules: match patterns against filenames (one per line).
+        // Delegates to EvaluateContent() so AND (&&) conditions and negation work
+        // consistently with file/command rules.
         try
         {
             string[] allFiles = Directory.GetFiles(foundDir);
-
-            foreach (var condition in rule.ContentConditions)
-            {
-                if (condition.Operator == ContentOperator.Literal)
-                {
-                    // Exact filename match
-                    string? matchedFile = null;
-                    if (condition.Negated)
-                    {
-                        // Check if any file doesn't have this exact name
-                        matchedFile = allFiles.FirstOrDefault(f => Path.GetFileName(f) != condition.Pattern);
-                        if (matchedFile is not null)
-                            return new RuleCheckResult { Status = CheckStatus.Passed, Detail = $"File not named '{condition.Pattern}' found: {Path.GetFileName(matchedFile)}" };
-                        return new RuleCheckResult { Status = CheckStatus.Failed, Detail = $"All files in '{foundDir}' are named '{condition.Pattern}'" };
-                    }
-                    else
-                    {
-                        // Check if file exists with exact name
-                        matchedFile = allFiles.FirstOrDefault(f => Path.GetFileName(f) == condition.Pattern);
-                        if (matchedFile is not null)
-                            return new RuleCheckResult { Status = CheckStatus.Passed, Detail = $"File found: {Path.GetFileName(matchedFile)}" };
-                        return new RuleCheckResult { Status = CheckStatus.Failed, Detail = $"File '{condition.Pattern}' not found in '{foundDir}'" };
-                    }
-                }
-                else if (condition.Operator == ContentOperator.Regex)
-                {
-                    // Regex pattern match against filenames
-                    string? matchedFile = null;
-                    try
-                    {
-                        var regex = new System.Text.RegularExpressions.Regex(condition.Pattern);
-                        if (condition.Negated)
-                        {
-                            // Check if any file doesn't match the pattern
-                            matchedFile = allFiles.FirstOrDefault(f => !regex.IsMatch(Path.GetFileName(f)));
-                            if (matchedFile is not null)
-                                return new RuleCheckResult { Status = CheckStatus.Passed, Detail = $"File not matching pattern found: {Path.GetFileName(matchedFile)}" };
-                            return new RuleCheckResult { Status = CheckStatus.Failed, Detail = $"All files in '{foundDir}' match the pattern" };
-                        }
-                        else
-                        {
-                            // Check if any file matches the pattern
-                            matchedFile = allFiles.FirstOrDefault(f => regex.IsMatch(Path.GetFileName(f)));
-                            if (matchedFile is not null)
-                                return new RuleCheckResult { Status = CheckStatus.Passed, Detail = $"File matching pattern found: {Path.GetFileName(matchedFile)}" };
-                            return new RuleCheckResult { Status = CheckStatus.Failed, Detail = $"No file in '{foundDir}' matches the pattern" };
-                        }
-                    }
-                    catch (System.Text.RegularExpressions.RegexParseException ex)
-                    {
-                        return new RuleCheckResult { Status = CheckStatus.Failed, Detail = $"Invalid regex pattern '{condition.Pattern}': {ex.Message}" };
-                    }
-                }
-            }
-            return new RuleCheckResult { Status = CheckStatus.Failed, Detail = $"No matching conditions" };
+            // Build content: one filename per line so EvaluateContent line logic applies
+            string fileNames = string.Join("\n", allFiles.Select(Path.GetFileName));
+            var (matched, detail) = EvaluateContent(fileNames, rule.ContentConditions, label: $"files in '{foundDir}'");
+            return new RuleCheckResult { Status = matched ? CheckStatus.Passed : CheckStatus.Failed, Detail = detail };
         }
         catch (Exception ex)
         {
@@ -418,8 +369,12 @@ public static class RuleChecker
             // write diagnostic output to stderr rather than stdout).
             Task<string> stdoutTask = proc.StandardOutput.ReadToEndAsync();
             Task<string> stderrTask  = proc.StandardError.ReadToEndAsync();
-            Task.WaitAll([stdoutTask, stderrTask], millisecondsTimeout: 10_000);
-            proc.WaitForExit(5_000);
+            bool streamsFinished = Task.WaitAll([stdoutTask, stderrTask], millisecondsTimeout: 10_000);
+            bool procExited      = proc.WaitForExit(5_000);
+            if (!streamsFinished || !procExited)
+            {
+                proc.Kill(entireProcessTree: true);
+            }
             string output = stdoutTask.Result + stderrTask.Result;
 
             if (!rule.HasContentCheck)
@@ -622,26 +577,15 @@ public static class RuleChecker
         if (!double.TryParse(match.Groups[1].Value, out double value))
             return (false, $"Captured '{match.Groups[1].Value}' in {label} is not numeric");
 
-        bool met = cond.NumericOp switch
+        (bool met, string sym) = cond.NumericOp switch
         {
-            NumericComparison.LessThan           => value < cond.NumericValue,
-            NumericComparison.LessThanOrEqual    => value <= cond.NumericValue,
-            NumericComparison.Equal              => value == cond.NumericValue,
-            NumericComparison.NotEqual           => value != cond.NumericValue,
-            NumericComparison.GreaterThanOrEqual => value >= cond.NumericValue,
-            NumericComparison.GreaterThan        => value > cond.NumericValue,
-            _                                    => false
-        };
-
-        string sym = cond.NumericOp switch
-        {
-            NumericComparison.LessThan           => "<",
-            NumericComparison.LessThanOrEqual    => "<=",
-            NumericComparison.Equal              => "==",
-            NumericComparison.NotEqual           => "!=",
-            NumericComparison.GreaterThanOrEqual => ">=",
-            NumericComparison.GreaterThan        => ">",
-            _                                    => "?"
+            NumericComparison.LessThan           => (value < cond.NumericValue,  "<"),
+            NumericComparison.LessThanOrEqual    => (value <= cond.NumericValue, "<="),
+            NumericComparison.Equal              => (value == cond.NumericValue, "=="),
+            NumericComparison.NotEqual           => (value != cond.NumericValue, "!="),
+            NumericComparison.GreaterThanOrEqual => (value >= cond.NumericValue, ">="),
+            NumericComparison.GreaterThan        => (value > cond.NumericValue,  ">"),
+            _                                    => (false,                      "?")
         };
 
         bool finalPassed = cond.Negated ? !met : met;
@@ -669,8 +613,7 @@ public static class RuleChecker
     private static string[] SplitLines(string text) =>
         text.Split(['\n', '\r'], StringSplitOptions.RemoveEmptyEntries);
 
-    private static string Truncate(string s, int max) =>
-        s.Length <= max ? s : s[..max] + "…";
+    private static string Truncate(string s, int max) => StringUtils.Truncate(s, max);
 
     private static string FormatBytes(long bytes) =>
         bytes switch
