@@ -196,17 +196,65 @@ static int ScanCommand(string policyPath, IReporter reporter)
 
 // ── Main Entry Point ─────────────────────────────────────────────────────────
 
-IReporter reporter = new ConsoleReporter();
+OutputLevel outputLevel = OutputLevel.Standard;
+string? logFile = null;
+string? target = null;
 
-if (args.Length == 0 || args[0] == "-h" || args[0] == "--help")
+for (int i = 0; i < args.Length; i++)
 {
-    reporter.PrintHelp();
+    switch (args[i])
+    {
+        case "-h":
+        case "--help":
+            new ConsoleReporter().PrintHelp();
+            return 0;
+        case "--display-details":
+            outputLevel = OutputLevel.Detailed;
+            break;
+        case "--no-details":
+            outputLevel = OutputLevel.Compact;
+            break;
+        case "-l":
+        case "--log":
+            if (i + 1 < args.Length)
+                logFile = args[++i];
+            else
+            {
+                Console.Error.WriteLine("Error: -l/--log requires a file path argument.");
+                return 1;
+            }
+            break;
+        default:
+            if (target is null)
+                target = args[i];
+            else
+            {
+                Console.Error.WriteLine($"Error: unexpected argument '{args[i]}'.");
+                return 1;
+            }
+            break;
+    }
+}
+
+if (target is null)
+{
+    new ConsoleReporter().PrintHelp();
     return 0;
 }
 
-string target = args[0];
+ConsoleReporter consoleReporter = new(outputLevel);
+IReporter reporter = logFile is not null
+    ? new CompositeReporter(consoleReporter, new FileReporter(logFile))
+    : consoleReporter;
 
-if (Directory.Exists(target))
-    return ScanDirectory(target, reporter);
+try
+{
+    if (Directory.Exists(target))
+        return ScanDirectory(target, reporter);
 
-return ScanCommand(target, reporter);
+    return ScanCommand(target, reporter);
+}
+finally
+{
+    if (reporter is IDisposable d) d.Dispose();
+}

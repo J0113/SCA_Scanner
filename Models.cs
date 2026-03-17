@@ -15,6 +15,21 @@ public enum CheckStatus
 }
 
 // ---------------------------------------------------------------------------
+// Console output verbosity level
+// ---------------------------------------------------------------------------
+
+/// <summary>Controls how much detail the console reporter outputs.</summary>
+public enum OutputLevel
+{
+    /// <summary>Only banner, policy header, and summary counts/score.</summary>
+    Compact,
+    /// <summary>Default: banner, policy header, requirements, per-check results, full summary.</summary>
+    Standard,
+    /// <summary>Everything: includes rule explanations and rule results per check.</summary>
+    Detailed
+}
+
+// ---------------------------------------------------------------------------
 // Rule check result
 // ---------------------------------------------------------------------------
 
