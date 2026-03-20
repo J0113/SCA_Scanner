@@ -49,6 +49,7 @@ public abstract class BaseReporter : IReporter
         WriteLine("  --no-details                Show only header and summary (no requirements or rules)");
         WriteLine("  -l, --log <file>            Write detailed output to a log file");
         WriteLine("  --csv <file>                Write scan results as CSV (one row per check)");
+        WriteLine("  -r, --report <file>         Write scan results in SCAP-SCC log format");
         WriteLine("  -h, --help                  Show this help message");
         WriteLine();
         WriteLine("EXAMPLES:", ConsoleColor.White);

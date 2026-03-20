@@ -190,9 +190,10 @@ static int ScanCommand(string policyPath, IReporter reporter, IDeserializer dese
 // ── Main Entry Point ─────────────────────────────────────────────────────────
 
 OutputLevel outputLevel = OutputLevel.Standard;
-string? logFile = null;
-string? csvFile = null;
-string? target  = null;
+string? logFile     = null;
+string? csvFile     = null;
+string? scapSccFile = null;
+string? target      = null;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -227,6 +228,16 @@ for (int i = 0; i < args.Length; i++)
                 return 1;
             }
             break;
+        case "-r":
+        case "--report":
+            if (i + 1 < args.Length)
+                scapSccFile = args[++i];
+            else
+            {
+                Console.Error.WriteLine("Error: -r/--report requires a file path argument.");
+                return 1;
+            }
+            break;
         default:
             if (target is null)
                 target = args[i];
@@ -249,7 +260,8 @@ ConsoleReporter consoleReporter = new(outputLevel);
 // Use object list so non-IReporter sub-reporters (e.g. CsvReporter) can be included
 List<object> reporters = [consoleReporter];
 if (logFile is not null) reporters.Add(new FileReporter(logFile));
-if (csvFile is not null) reporters.Add(new CsvReporter(csvFile));
+if (csvFile     is not null) reporters.Add(new CsvReporter(csvFile));
+if (scapSccFile is not null) reporters.Add(new AdvancedReporter(scapSccFile));
 IReporter reporter = reporters.Count > 1
     ? new CompositeReporter([.. reporters])
     : consoleReporter;
