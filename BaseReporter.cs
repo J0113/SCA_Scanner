@@ -68,7 +68,6 @@ public abstract class BaseReporter : IReporter
         WriteLine("NOTES:", ConsoleColor.White);
         WriteLine("  - Config file is optional. By default, app looks for 'config.yml' in working dir");
         WriteLine("  - CLI arguments always override config file values");
-        WriteLine("  - Environment variables: SFTP_USER, SFTP_PASS, SFTP_PATH (lowest priority)");
         WriteLine();
         WriteLine("EXAMPLES:", ConsoleColor.White);
         WriteLine("  SCAScanner Policies/sample_policy.yaml");
