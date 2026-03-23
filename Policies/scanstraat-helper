@@ -1,0 +1,390 @@
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
+function Test-IsAdmin {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Get-SourceDirectory {
+    if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+        return $PSScriptRoot.TrimEnd('\')
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($PSCommandPath)) {
+        return (Split-Path -Parent $PSCommandPath).TrimEnd('\')
+    }
+
+    $processPath = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+    if (-not [string]::IsNullOrWhiteSpace($processPath)) {
+        return (Split-Path -Parent $processPath).TrimEnd('\')
+    }
+
+    throw "Could not determine the application folder."
+}
+
+function Escape-YamlValue {
+    param([string]$Value)
+
+    if ($null -eq $Value) {
+        return ""
+    }
+
+    return $Value -replace "'", "''"
+}
+
+if (-not (Test-IsAdmin)) {
+    [System.Windows.Forms.MessageBox]::Show(
+        "Run this installer as Administrator.",
+        "RWS Scanstraat Installer",
+        [System.Windows.Forms.MessageBoxButtons]::OK,
+        [System.Windows.Forms.MessageBoxIcon]::Warning
+    ) | Out-Null
+    exit 1
+}
+
+[System.Windows.Forms.Application]::EnableVisualStyles()
+
+$fontTitle = New-Object System.Drawing.Font("Segoe UI", 14, [System.Drawing.FontStyle]::Bold)
+$fontText  = New-Object System.Drawing.Font("Segoe UI", 10)
+
+function New-Label {
+    param(
+        [string]$Text,
+        [int]$X,
+        [int]$Y,
+        [int]$W = 680,
+        [int]$H = 25,
+        [System.Drawing.Font]$Font = $fontText
+    )
+
+    $label = New-Object System.Windows.Forms.Label
+    $label.Text = $Text
+    $label.Location = New-Object System.Drawing.Point($X, $Y)
+    $label.Size = New-Object System.Drawing.Size($W, $H)
+    $label.Font = $Font
+    return $label
+}
+
+function New-TextBox {
+    param(
+        [string]$Text,
+        [int]$X,
+        [int]$Y,
+        [int]$W = 520
+    )
+
+    $tb = New-Object System.Windows.Forms.TextBox
+    $tb.Text = $Text
+    $tb.Location = New-Object System.Drawing.Point($X, $Y)
+    $tb.Size = New-Object System.Drawing.Size($W, 28)
+    return $tb
+}
+
+$sourceDir      = Get-SourceDirectory
+$exeName        = "SCAScanner-win-x64.exe"
+$benchmarkName  = "cis_win2025.yml"
+$taskName       = "RWS Scanstraat Weekly"
+
+$sourceExe       = Join-Path $sourceDir $exeName
+$sourceBenchmark = Join-Path $sourceDir $benchmarkName
+
+$installDir      = Join-Path $env:ProgramFiles "RWS\Scanstraat"
+$dataDir         = Join-Path $env:ProgramData "RWS\Scanstraat"
+$logDir          = Join-Path $dataDir "logs"
+$outDir          = Join-Path $dataDir "out"
+$targetExe       = Join-Path $installDir $exeName
+$targetBenchmark = Join-Path $installDir $benchmarkName
+$configPath      = Join-Path $installDir "config.yml"
+
+function Write-ConfigFile {
+    $reportFile = Join-Path $outDir ("sca_report_{0}.txt" -f $env:COMPUTERNAME)
+
+    $sftpHost  = Escape-YamlValue $txtSftpHost.Text.Trim()
+    $sftpPort  = $txtSftpPort.Text.Trim()
+    $sftpUser  = Escape-YamlValue $txtSftpUser.Text.Trim()
+    $sftpPass  = Escape-YamlValue $txtSftpPass.Text
+    $sftpPath  = Escape-YamlValue $txtSftpPath.Text.Trim()
+    $reportFileEscaped = Escape-YamlValue $reportFile
+
+    $content = @"
+report_file: '$reportFileEscaped'
+sftp_host: '$sftpHost'
+sftp_port: $sftpPort
+sftp_user: '$sftpUser'
+sftp_pass: '$sftpPass'
+sftp_key: ''
+sftp_path: '$sftpPath'
+"@
+
+    Set-Content -Path $configPath -Value $content -Encoding UTF8
+}
+
+function Install-Files {
+    if (-not (Test-Path $sourceExe)) {
+        throw "Missing file: $sourceExe"
+    }
+
+    if (-not (Test-Path $sourceBenchmark)) {
+        throw "Missing file: $sourceBenchmark"
+    }
+
+    New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+    New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
+    New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+
+    Copy-Item -Path $sourceExe -Destination $targetExe -Force
+    Copy-Item -Path $sourceBenchmark -Destination $targetBenchmark -Force
+
+    Write-ConfigFile
+}
+
+function Create-OrUpdateTask {
+    $action = New-ScheduledTaskAction `
+        -Execute $targetExe `
+        -Argument ('"{0}"' -f $targetBenchmark) `
+        -WorkingDirectory $installDir
+
+    $trigger = New-ScheduledTaskTrigger `
+        -Weekly `
+        -WeeksInterval 1 `
+        -DaysOfWeek Sunday `
+        -At 5:00AM
+
+    $principal = New-ScheduledTaskPrincipal `
+        -UserId "SYSTEM" `
+        -LogonType ServiceAccount `
+        -RunLevel Highest
+
+    $settings = New-ScheduledTaskSettingsSet `
+        -StartWhenAvailable `
+        -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries
+
+    Register-ScheduledTask `
+        -TaskName $taskName `
+        -Action $action `
+        -Trigger $trigger `
+        -Principal $principal `
+        -Settings $settings `
+        -Description "Runs SCA_Scanner weekly for Windows Server 2025 benchmark." `
+        -Force | Out-Null
+}
+
+$form = New-Object System.Windows.Forms.Form
+$form.Text = "RWS Scanstraat Installer"
+$form.Size = New-Object System.Drawing.Size(860, 620)
+$form.StartPosition = "CenterScreen"
+$form.FormBorderStyle = "FixedDialog"
+$form.MaximizeBox = $false
+$form.MinimizeBox = $false
+
+$currentStep = 1
+
+$panel1 = New-Object System.Windows.Forms.Panel
+$panel1.Location = New-Object System.Drawing.Point(15, 15)
+$panel1.Size = New-Object System.Drawing.Size(810, 430)
+
+$panel2 = New-Object System.Windows.Forms.Panel
+$panel2.Location = New-Object System.Drawing.Point(15, 15)
+$panel2.Size = New-Object System.Drawing.Size(810, 460)
+$panel2.Visible = $false
+
+$panel3 = New-Object System.Windows.Forms.Panel
+$panel3.Location = New-Object System.Drawing.Point(15, 15)
+$panel3.Size = New-Object System.Drawing.Size(810, 430)
+$panel3.Visible = $false
+
+# Step 1
+$panel1.Controls.Add((New-Label "Welcome" 10 10 760 35 $fontTitle))
+$panel1.Controls.Add((New-Label "This installer will set up RWS Scanstraat on this machine." 10 65 760 28))
+$panel1.Controls.Add((New-Label "Schedule: every Sunday at 05:00" 10 135 760 28))
+$panel1.Controls.Add((New-Label "Click Next to continue." 10 205 760 28))
+
+# Step 2
+$panel2.Controls.Add((New-Label "Configuration" 10 10 760 35 $fontTitle))
+$panel2.Controls.Add((New-Label "Fill in the SFTP settings for config.yml." 10 60 760 28))
+
+$panel2.Controls.Add((New-Label "SFTP host" 10 100))
+$txtSftpHost = New-TextBox "" 10 125 640
+
+$panel2.Controls.Add((New-Label "SFTP port" 10 165))
+$txtSftpPort = New-TextBox "22" 10 190 180
+
+$panel2.Controls.Add((New-Label "SFTP user" 10 230))
+$txtSftpUser = New-TextBox "" 10 255 640
+
+$panel2.Controls.Add((New-Label "SFTP password" 10 295))
+$txtSftpPass = New-Object System.Windows.Forms.TextBox
+$txtSftpPass.Location = New-Object System.Drawing.Point(10, 320)
+$txtSftpPass.Size = New-Object System.Drawing.Size(640, 28)
+$txtSftpPass.UseSystemPasswordChar = $true
+
+$panel2.Controls.Add((New-Label "SFTP path" 10 360))
+$txtSftpPath = New-TextBox "" 10 385 640
+
+$panel2.Controls.Add($txtSftpHost)
+$panel2.Controls.Add($txtSftpPort)
+$panel2.Controls.Add($txtSftpUser)
+$panel2.Controls.Add($txtSftpPass)
+$panel2.Controls.Add($txtSftpPath)
+
+# Step 3
+$panel3.Controls.Add((New-Label "Ready to Install" 10 10 760 35 $fontTitle))
+$panel3.Controls.Add((New-Label "Click Finish to install the files, write config.yml, and create or update the scheduled task." 10 65 780 30))
+$panel3.Controls.Add((New-Label "Install folder: $installDir" 10 130 780 28))
+$panel3.Controls.Add((New-Label "Data folder: $dataDir" 10 165 780 28))
+$panel3.Controls.Add((New-Label "Task name: $taskName" 10 200 780 28))
+$panel3.Controls.Add((New-Label "Benchmark: $benchmarkName" 10 235 780 28))
+
+$panel3.Controls.Add((New-Label "SFTP host:" 10 285 120 25))
+$lblReadySftpHost = New-Label "" 150 285 620 25
+$panel3.Controls.Add($lblReadySftpHost)
+
+$panel3.Controls.Add((New-Label "SFTP user:" 10 315 120 25))
+$lblReadySftpUser = New-Label "" 150 315 620 25
+$panel3.Controls.Add($lblReadySftpUser)
+
+$panel3.Controls.Add((New-Label "SFTP path:" 10 345 120 25))
+$lblReadySftpPath = New-Label "" 150 345 620 25
+$panel3.Controls.Add($lblReadySftpPath)
+
+$btnBack = New-Object System.Windows.Forms.Button
+$btnBack.Text = "Back"
+$btnBack.Location = New-Object System.Drawing.Point(590, 520)
+$btnBack.Size = New-Object System.Drawing.Size(80, 30)
+$btnBack.Enabled = $false
+
+$btnNext = New-Object System.Windows.Forms.Button
+$btnNext.Text = "Next >"
+$btnNext.Location = New-Object System.Drawing.Point(680, 520)
+$btnNext.Size = New-Object System.Drawing.Size(80, 30)
+
+$btnFinish = New-Object System.Windows.Forms.Button
+$btnFinish.Text = "Finish"
+$btnFinish.Location = New-Object System.Drawing.Point(680, 520)
+$btnFinish.Size = New-Object System.Drawing.Size(80, 30)
+$btnFinish.Visible = $false
+
+$btnCancel = New-Object System.Windows.Forms.Button
+$btnCancel.Text = "Cancel"
+$btnCancel.Location = New-Object System.Drawing.Point(770, 520)
+$btnCancel.Size = New-Object System.Drawing.Size(80, 30)
+
+function Show-Step {
+    param([int]$Step)
+
+    $panel1.Visible = $false
+    $panel2.Visible = $false
+    $panel3.Visible = $false
+
+    $btnBack.Enabled = $Step -gt 1
+    $btnNext.Visible = $Step -lt 3
+    $btnFinish.Visible = $Step -eq 3
+
+    switch ($Step) {
+        1 {
+            $panel1.Visible = $true
+        }
+        2 {
+            $panel2.Visible = $true
+        }
+        3 {
+            $lblReadySftpHost.Text = $txtSftpHost.Text.Trim()
+            $lblReadySftpUser.Text = $txtSftpUser.Text.Trim()
+            $lblReadySftpPath.Text = $txtSftpPath.Text.Trim()
+            $panel3.Visible = $true
+        }
+    }
+
+    $script:currentStep = $Step
+}
+
+$btnBack.Add_Click({
+    if ($script:currentStep -gt 1) {
+        Show-Step ($script:currentStep - 1)
+    }
+})
+
+$btnNext.Add_Click({
+    if ($script:currentStep -eq 1) {
+        Show-Step 2
+        return
+    }
+
+    if ($script:currentStep -eq 2) {
+        if ([string]::IsNullOrWhiteSpace($txtSftpHost.Text)) {
+            [System.Windows.Forms.MessageBox]::Show("Enter the SFTP host.", "Validation") | Out-Null
+            return
+        }
+
+        if ([string]::IsNullOrWhiteSpace($txtSftpPort.Text)) {
+            [System.Windows.Forms.MessageBox]::Show("Enter the SFTP port.", "Validation") | Out-Null
+            return
+        }
+
+        $portValue = 0
+        if (-not [int]::TryParse($txtSftpPort.Text, [ref]$portValue)) {
+            [System.Windows.Forms.MessageBox]::Show("SFTP port must be a number.", "Validation") | Out-Null
+            return
+        }
+
+        if ([string]::IsNullOrWhiteSpace($txtSftpUser.Text)) {
+            [System.Windows.Forms.MessageBox]::Show("Enter the SFTP user.", "Validation") | Out-Null
+            return
+        }
+
+        if ([string]::IsNullOrWhiteSpace($txtSftpPass.Text)) {
+            [System.Windows.Forms.MessageBox]::Show("Enter the SFTP password.", "Validation") | Out-Null
+            return
+        }
+
+        if ([string]::IsNullOrWhiteSpace($txtSftpPath.Text)) {
+            [System.Windows.Forms.MessageBox]::Show("Enter the SFTP path.", "Validation") | Out-Null
+            return
+        }
+
+        Show-Step 3
+    }
+})
+
+$btnFinish.Add_Click({
+    try {
+        Install-Files
+        Create-OrUpdateTask
+
+        [System.Windows.Forms.MessageBox]::Show(
+            "Installation completed successfully.`r`n`r`nTask: $taskName`r`nSchedule: Every Sunday at 05:00",
+            "Done",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Information
+        ) | Out-Null
+
+        $form.Close()
+    }
+    catch {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Installation failed.`r`n`r`n$($_.Exception.Message)",
+            "Error",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        ) | Out-Null
+    }
+})
+
+$btnCancel.Add_Click({
+    $form.Close()
+})
+
+$form.Controls.Add($panel1)
+$form.Controls.Add($panel2)
+$form.Controls.Add($panel3)
+$form.Controls.Add($btnBack)
+$form.Controls.Add($btnNext)
+$form.Controls.Add($btnFinish)
+$form.Controls.Add($btnCancel)
+
+Show-Step 1
+[void]$form.ShowDialog()
