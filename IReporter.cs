@@ -42,6 +42,8 @@ public interface IDirectoryReporter
 public interface IErrorReporter
 {
     void PrintError(string message);
+    void PrintWarning(string message);
+    void PrintInfo(string message);
     void PrintNoPolicesFound(string directoryPath);
 }
 

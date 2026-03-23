@@ -50,6 +50,14 @@ public abstract class BaseReporter : IReporter
         WriteLine("  -l, --log <file>            Write detailed output to a log file");
         WriteLine("  --csv <file>                Write scan results as CSV (one row per check)");
         WriteLine("  -r, --report <file>         Write scan results in SCAP-SCC log format");
+        WriteLine();
+        WriteLine("SFTP UPLOAD OPTIONS:", ConsoleColor.White);
+        WriteLine("  --sftp <host[:port]>        Upload generated files to SFTP server");
+        WriteLine("  --sftp-user <user>          SFTP username (env: SFTP_USER)");
+        WriteLine("  --sftp-pass <pass>          SFTP password (env: SFTP_PASS) - ignored if using key auth");
+        WriteLine("  --sftp-key <path>           SSH private key file path for key-based authentication");
+        WriteLine("  --sftp-path <path>          Remote directory path (env: SFTP_PATH, default: /)");
+        WriteLine();
         WriteLine("  -h, --help                  Show this help message");
         WriteLine();
         WriteLine("EXAMPLES:", ConsoleColor.White);
@@ -308,6 +316,16 @@ public abstract class BaseReporter : IReporter
     public void PrintError(string message)
     {
         WriteFail($"Error: {message}\n");
+    }
+
+    public void PrintWarning(string message)
+    {
+        WriteLine($"Warning: {message}", ConsoleColor.Yellow);
+    }
+
+    public void PrintInfo(string message)
+    {
+        WriteLine($"Info: {message}", ConsoleColor.Cyan);
     }
 
     public void PrintNoPolicesFound(string directoryPath)

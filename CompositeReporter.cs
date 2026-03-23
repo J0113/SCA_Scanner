@@ -81,6 +81,12 @@ public sealed class CompositeReporter : IReporter, IDisposable
     public void PrintError(string message)
     { foreach (var r in _error) r.PrintError(message); }
 
+    public void PrintWarning(string message)
+    { foreach (var r in _error) r.PrintWarning(message); }
+
+    public void PrintInfo(string message)
+    { foreach (var r in _error) r.PrintInfo(message); }
+
     public void PrintNoPolicesFound(string directoryPath)
     { foreach (var r in _error) r.PrintNoPolicesFound(directoryPath); }
 

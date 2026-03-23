@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <PackageReference Include="YamlDotNet" Version="15.3.0" />
+    <PackageReference Include="SSH.NET" Version="2020.0.2" />
   </ItemGroup>
 
   <ItemGroup>

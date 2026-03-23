@@ -195,6 +195,14 @@ string? csvFile     = null;
 string? scapSccFile = null;
 string? target      = null;
 
+// SFTP configuration
+string? sftpHost = null;
+int sftpPort = 22;
+string? sftpUser = Environment.GetEnvironmentVariable("SFTP_USER");
+string? sftpPass = Environment.GetEnvironmentVariable("SFTP_PASS");
+string? sftpKey = null;
+string? sftpPath = Environment.GetEnvironmentVariable("SFTP_PATH") ?? "/";
+
 for (int i = 0; i < args.Length; i++)
 {
     switch (args[i])
@@ -235,6 +243,57 @@ for (int i = 0; i < args.Length; i++)
             else
             {
                 Console.Error.WriteLine("Error: -r/--report requires a file path argument.");
+                return 1;
+            }
+            break;
+        case "--sftp":
+            if (i + 1 < args.Length)
+            {
+                string hostPort = args[++i];
+                string[] parts = hostPort.Split(':');
+                sftpHost = parts[0];
+                if (parts.Length > 1 && int.TryParse(parts[1], out int port))
+                    sftpPort = port;
+            }
+            else
+            {
+                Console.Error.WriteLine("Error: --sftp requires a host[:port] argument.");
+                return 1;
+            }
+            break;
+        case "--sftp-user":
+            if (i + 1 < args.Length)
+                sftpUser = args[++i];
+            else
+            {
+                Console.Error.WriteLine("Error: --sftp-user requires a username argument.");
+                return 1;
+            }
+            break;
+        case "--sftp-pass":
+            if (i + 1 < args.Length)
+                sftpPass = args[++i];
+            else
+            {
+                Console.Error.WriteLine("Error: --sftp-pass requires a password argument.");
+                return 1;
+            }
+            break;
+        case "--sftp-key":
+            if (i + 1 < args.Length)
+                sftpKey = args[++i];
+            else
+            {
+                Console.Error.WriteLine("Error: --sftp-key requires a file path argument.");
+                return 1;
+            }
+            break;
+        case "--sftp-path":
+            if (i + 1 < args.Length)
+                sftpPath = args[++i];
+            else
+            {
+                Console.Error.WriteLine("Error: --sftp-path requires a path argument.");
                 return 1;
             }
             break;
@@ -281,4 +340,37 @@ try
 finally
 {
     if (reporter is IDisposable d) d.Dispose();
+
+    // Upload files to SFTP server if configured
+    if (sftpHost is not null)
+    {
+        var sftpConfig = new SftpConfig
+        {
+            Host = sftpHost,
+            Port = sftpPort,
+            User = sftpUser,
+            Password = sftpPass,
+            KeyPath = sftpKey,
+            RemotePath = sftpPath
+        };
+
+        var filesToUpload = new List<string>();
+        if (logFile is not null && File.Exists(logFile)) filesToUpload.Add(logFile);
+        if (csvFile is not null && File.Exists(csvFile)) filesToUpload.Add(csvFile);
+        if (scapSccFile is not null && File.Exists(scapSccFile)) filesToUpload.Add(scapSccFile);
+
+        if (filesToUpload.Any())
+        {
+            try
+            {
+                var uploader = new SftpUploader();
+                uploader.UploadFilesAsync(sftpConfig, filesToUpload, consoleReporter).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                consoleReporter.PrintError($"SFTP upload failed: {ex.Message}");
+                Environment.Exit(1);
+            }
+        }
+    }
 }
