@@ -203,6 +203,80 @@ string? sftpPass = Environment.GetEnvironmentVariable("SFTP_PASS");
 string? sftpKey = null;
 string? sftpPath = Environment.GetEnvironmentVariable("SFTP_PATH") ?? "/";
 
+// ── Phase 1: Early argument scanning for --write-config and --config ─────────
+string? configPath = null;
+for (int i = 0; i < args.Length; i++)
+{
+    if (args[i] == "--write-config")
+    {
+        // Determine output path for config template
+        string writePath = (i + 1 < args.Length && !args[i + 1].StartsWith("--"))
+            ? args[++i]
+            : "config.yml";
+
+        var tempConsoleReporter = new ConsoleReporter();
+        try
+        {
+            ConfigLoader.WriteTemplate(writePath, tempConsoleReporter);
+        }
+        catch (Exception ex)
+        {
+            tempConsoleReporter.PrintError(ex.Message);
+            return 1;
+        }
+        return 0;
+    }
+
+    if ((args[i] == "-c" || args[i] == "--config") && i + 1 < args.Length)
+    {
+        configPath = args[++i];
+    }
+}
+
+// ── Phase 2: Load configuration file (if it exists) ───────────────────────────
+var tempReporter = new ConsoleReporter();
+ScannerConfig loadedConfig;
+try
+{
+    loadedConfig = ConfigLoader.LoadConfig(configPath, tempReporter);
+}
+catch (Exception ex)
+{
+    tempReporter.PrintError(ex.Message);
+    return 1;
+}
+
+// Apply loaded config values as defaults for CLI arguments
+try
+{
+    if (loadedConfig.OutputLevel.HasValue)
+        outputLevel = loadedConfig.OutputLevel.Value;
+    if (loadedConfig.LogFile is not null)
+        logFile = loadedConfig.LogFile;
+    if (loadedConfig.CsvFile is not null)
+        csvFile = loadedConfig.CsvFile;
+    if (loadedConfig.ReportFile is not null)
+        scapSccFile = loadedConfig.ReportFile;
+    if (loadedConfig.SftpHost is not null)
+        sftpHost = loadedConfig.SftpHost;
+    if (loadedConfig.SftpPort.HasValue)
+        sftpPort = loadedConfig.SftpPort.Value;
+    if (loadedConfig.SftpUser is not null)
+        sftpUser = loadedConfig.SftpUser;
+    if (loadedConfig.SftpPass is not null)
+        sftpPass = loadedConfig.SftpPass;
+    if (loadedConfig.SftpKey is not null)
+        sftpKey = loadedConfig.SftpKey;
+    if (loadedConfig.SftpPath is not null)
+        sftpPath = loadedConfig.SftpPath;
+}
+catch (ArgumentException ex)
+{
+    tempReporter.PrintError(ex.Message);
+    return 1;
+}
+
+// ── Phase 3: Parse CLI arguments (overrides config file values) ──────────────
 for (int i = 0; i < args.Length; i++)
 {
     switch (args[i])
@@ -296,6 +370,16 @@ for (int i = 0; i < args.Length; i++)
                 Console.Error.WriteLine("Error: --sftp-path requires a path argument.");
                 return 1;
             }
+            break;
+        case "-c":
+        case "--config":
+            // Already handled in Phase 1, just skip here
+            if (i + 1 < args.Length) i++;
+            break;
+        case "--write-config":
+            // Already handled in Phase 1, just skip here
+            if (i + 1 < args.Length && !args[i + 1].StartsWith("--"))
+                i++;
             break;
         default:
             if (target is null)

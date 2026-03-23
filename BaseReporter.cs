@@ -58,12 +58,23 @@ public abstract class BaseReporter : IReporter
         WriteLine("  --sftp-key <path>           SSH private key file path for key-based authentication");
         WriteLine("  --sftp-path <path>          Remote directory path (env: SFTP_PATH, default: /)");
         WriteLine();
+        WriteLine("CONFIG FILE OPTIONS:", ConsoleColor.White);
+        WriteLine("  -c, --config <path>         Load configuration from YAML file");
+        WriteLine("  --write-config [path]       Generate a template config file (default: config.yml)");
+        WriteLine("                              Use with path to write to custom location");
+        WriteLine();
         WriteLine("  -h, --help                  Show this help message");
+        WriteLine();
+        WriteLine("NOTES:", ConsoleColor.White);
+        WriteLine("  - Config file is optional. By default, app looks for 'config.yml' in working dir");
+        WriteLine("  - CLI arguments always override config file values");
+        WriteLine("  - Environment variables: SFTP_USER, SFTP_PASS, SFTP_PATH (lowest priority)");
         WriteLine();
         WriteLine("EXAMPLES:", ConsoleColor.White);
         WriteLine("  SCAScanner Policies/sample_policy.yaml");
         WriteLine("  SCAScanner --display-details Policies/sample_policy.yaml");
-        WriteLine("  SCAScanner --no-details --log results.log Policies/");
+        WriteLine("  SCAScanner --write-config");
+        WriteLine("  SCAScanner --config custom.yml --no-details --csv report.csv Policies/");
         WriteLine();
     }
 
