@@ -1,0 +1,25 @@
+policy:
+  id: "windows_kb_updates"
+  file: "windows_kb_updates.yaml"
+  name: "Windows KB Update Compliance"
+  description: "Verifies that Windows systems have received updates within 180 days"
+  references:
+    - "https://support.microsoft.com/en-us/kb/4027667"
+
+requirements:
+  title: "Windows Operating System Required"
+  description: "This policy applies only to Windows systems"
+  condition: all
+  rules:
+    - 'c:cmd /c ver -> r:Windows'
+    
+checks:
+  - id: 5001
+    title: "Ensure Windows KB updates are recent (within 180 days)"
+    description: "Verifies that the most recent Windows KB/hotfix was installed within the last 180 days"
+    rationale: "Timely application of security updates is critical to maintain system security and stability. Systems not receiving regular updates are vulnerable to known security exploits."
+    remediation: "Install the latest Windows updates through Windows Update or by manually downloading and installing the latest hotfixes from Microsoft KB articles."
+    condition: all
+    rules:
+      - 'c:cmd /c powershell "(Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 1).InstalledOn.ToString(\"dd-MM-yyyy\")" -> r:\d{2}-\d{2}-\d{4}'
+      - 'c:cmd /c powershell "[Math]::Floor(((Get-Date) - (Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 1).InstalledOn).TotalDays)" -> n:^(\d+) compare <= 180'
